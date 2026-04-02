@@ -948,16 +948,16 @@ async function loadAllFromDB(){
         ...a,
         rates:a.rates||dr,
         perms:a.perms||{},
-        pinSet:a.pinSet||a.pinset||false,
-        roleTitle:a.roleTitle||a.roletitle||''
+        pinset:a.pinset||false,
+        roletitle:a.roletitle||''
       }));
     } else {
       console.log('No accounts found — seeding defaults');
       const dr=defaultRates();
       _accs=[
-        {id:'owner_ig',name:'Isaiaih Gomez',roleTitle:'Owner',type:'owner',color:'#44a2e6',pin:'0000',pinSet:false,perms:{},rates:dr},
-        {id:'luis',name:'Luis Gonzalez',roleTitle:'Lead Technician',type:'tech',color:'#44a2e6',pin:'1234',pinSet:true,perms:{},rates:dr},
-        {id:'anthony',name:'Anthony',roleTitle:'Technician',type:'tech',color:'#111111',pin:'5678',pinSet:true,perms:{},rates:dr}
+        {id:'owner_ig',name:'Isaiaih Gomez',roletitle:'Owner',type:'owner',color:'#44a2e6',pin:'0000',pinset:false,perms:{},rates:dr},
+        {id:'luis',name:'Luis Gonzalez',roletitle:'Lead Technician',type:'tech',color:'#44a2e6',pin:'1234',pinset:true,perms:{},rates:dr},
+        {id:'anthony',name:'Anthony',roletitle:'Technician',type:'tech',color:'#111111',pin:'5678',pinset:true,perms:{},rates:dr}
       ];
       const seedResult=await sbFetch('pd_accounts',{
         method:'POST',
@@ -1311,7 +1311,7 @@ function renderOwner(selMk){
       <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${emp.color}"></div>
       <div style="display:flex;align-items:center;gap:11px;margin-bottom:16px">
         <div class="av" style="background:${emp.color};width:40px;height:40px;font-size:16px">${initials(emp.name)}</div>
-        <div><div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:500;color:var(--ink)">${emp.name}</div><div style="font-size:11px;color:var(--muted)">${emp.roleTitle}</div></div>
+        <div><div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:500;color:var(--ink)">${emp.name}</div><div style="font-size:11px;color:var(--muted)">${emp.roletitle}</div></div>
         <div style="margin-left:auto;font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:500;color:${c.total>=c.s.start?'var(--green)':'var(--red)'}">${fm(c.total)}</div>
       </div>
       <div class="prog-wrap"><div class="prog-lbl"><span>Upsell sales</span><span>${fm(c.upsellSales)}</span></div><div class="prog-track"><div class="prog-fill" style="width:${uPct}%;background:${emp.color}"></div></div></div>
@@ -1577,7 +1577,7 @@ function renderAccList(){
     const rp=ROLES[a.type]||ROLES.tech;
     return`<div class="acc-item">
       <div class="av" style="background:${a.color};width:38px;height:38px;font-size:14px">${initials(a.name)}</div>
-      <div style="flex:1"><div style="font-weight:500;font-size:14px;color:var(--ink)">${a.name}</div><div style="font-size:12px;color:var(--muted)">${a.roleTitle} · <span class="role-pill ${rp.cls}" style="font-size:10px;padding:2px 8px">${rp.label}</span>${!a.pinSet?' · <span style="color:var(--amber);font-size:11px">First login PIN not set</span>':''}</div></div>
+      <div style="flex:1"><div style="font-weight:500;font-size:14px;color:var(--ink)">${a.name}</div><div style="font-size:12px;color:var(--muted)">${a.roletitle} · <span class="role-pill ${rp.cls}" style="font-size:10px;padding:2px 8px">${rp.label}</span>${!a.pinset?' · <span style="color:var(--amber);font-size:11px">First login PIN not set</span>':''}</div></div>
       <div style="display:flex;gap:7px">
         ${a.id===currentUser?.id?`<button class="btn btn-ghost btn-sm" onclick="openChangePIN()">Change PIN</button>`:''}
         ${canManage&&a.id!==currentUser?.id?`<button class="btn btn-ghost btn-sm" onclick="openEditAcc('${a.id}')">Edit</button><button class="btn btn-red btn-sm" onclick="deleteAcc('${a.id}')">Remove</button>`:''}
@@ -1630,7 +1630,7 @@ function openAddAcc(){
 function openEditAcc(id){
   const acc=getAccs().find(a=>a.id===id);if(!acc)return;editAccId=id;
   document.getElementById('acc-modal-title').textContent='Edit — '+acc.name;document.getElementById('acc-save-btn').textContent='Save Changes';
-  document.getElementById('acc-name').value=acc.name;document.getElementById('acc-role-title').value=acc.roleTitle;document.getElementById('acc-pin').value=acc.pin||'';document.getElementById('acc-type').value=acc.type;
+  document.getElementById('acc-name').value=acc.name;document.getElementById('acc-role-title').value=acc.roletitle;document.getElementById('acc-pin').value=acc.pin||'';document.getElementById('acc-type').value=acc.type;
   const rmap={start:'er-start',checklist:'er-ck',late:'er-late',lf:'er-lf',complaint:'er-comp',callback:'er-cb',badrev:'er-badrev',goodrev:'er-goodrev',commission:'er-comm',commissionTier2:'er-comm2',attendance:'er-att',van:'er-van',happy:'er-happy',nocallback:'er-ncb',ontime:'er-ot'};
   Object.entries(rmap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=acc.rates?acc.rates[k]||0:0;});
   document.getElementById('emp-rates-wrap').style.display=acc.type==='tech'?'block':'none';
@@ -1646,12 +1646,12 @@ function saveAccount(){
   if(editAccId){
     const idx=_accs.findIndex(a=>a.id===editAccId);
     if(idx>-1){
-      _accs[idx]={..._accs[idx],name,roleTitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinSet:true,perms,rates};
+      _accs[idx]={..._accs[idx],name,roletitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinset:true,perms,rates};
       saveOneAcc(_accs[idx]);
     }
     addAudit('Account updated',name);showToast(name+' updated');
   } else {
-    const newAcc={id:uid(),name,roleTitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinSet:true,perms,rates};
+    const newAcc={id:uid(),name,roletitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinset:true,perms,rates};
     _accs.push(newAcc);
     saveOneAcc(newAcc);
     addAudit('Account created',name+' ('+type+')');showToast(name+' added');
@@ -1678,7 +1678,7 @@ function doChangePIN(){
   const idx=_accs.findIndex(a=>a.id===currentUser.id);
   if(idx>-1){
     _accs[idx].pin=nw;
-    _accs[idx].pinSet=true;
+    _accs[idx].pinset=true;
     currentUser.pin=nw;
     saveOneAcc(_accs[idx]);
   }
@@ -1708,7 +1708,7 @@ function loadTheme(){const t=localStorage.getItem('pd_theme')||'light';document.
 function renderEmpSel(){
   document.getElementById('emp-sel').innerHTML=getAccs().map(a=>{
     const rp=ROLES[a.type]||ROLES.tech;
-    return`<div class="emp-sel-item" onclick="selectUser('${a.id}')"><div class="av" style="background:${a.color};width:34px;height:34px;font-size:13px">${initials(a.name)}</div><div><div style="font-weight:500;color:var(--ink)">${a.name}</div><div style="font-size:11px;color:var(--muted)">${a.roleTitle} · <span class="${rp.cls} role-pill" style="font-size:10px;padding:1px 7px">${rp.label}</span></div></div></div>`;
+    return`<div class="emp-sel-item" onclick="selectUser('${a.id}')"><div class="av" style="background:${a.color};width:34px;height:34px;font-size:13px">${initials(a.name)}</div><div><div style="font-weight:500;color:var(--ink)">${a.name}</div><div style="font-size:11px;color:var(--muted)">${a.roletitle} · <span class="${rp.cls} role-pill" style="font-size:10px;padding:1px 7px">${rp.label}</span></div></div></div>`;
   }).join('');
 }
 function selectUser(id){
@@ -1716,7 +1716,7 @@ function selectUser(id){
   document.getElementById('pin-title').textContent='Welcome, '+acc.name.split(' ')[0];
   document.getElementById('pin-sub').textContent='Enter your PIN to continue';
   document.getElementById('emp-sel').style.display='none';
-  if(!acc.pinSet){
+  if(!acc.pinset){
     document.getElementById('pin-newset').style.display='block';document.getElementById('pin-entry').style.display='none';
   } else {
     document.getElementById('pin-entry').style.display='block';document.getElementById('pin-newset').style.display='none';
@@ -1740,7 +1740,7 @@ function submitNewPin(){
   const idx=_accs.findIndex(a=>a.id===pinTarget.id);
   if(idx>-1){
     _accs[idx].pin=p1;
-    _accs[idx].pinSet=true;
+    _accs[idx].pinset=true;
     pinTarget={..._accs[idx]};
     saveOneAcc(_accs[idx]);
   }
