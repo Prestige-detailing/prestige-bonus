@@ -928,7 +928,13 @@ async function loadAllFromDB(){
     ]);
     const dr=defaultRates();
     if(accs&&accs.length){
-      _accs=accs.map(a=>({...a,rates:a.rates||dr,perms:a.perms||{}}));
+      _accs=accs.map(a=>({
+        ...a,
+        rates:a.rates||dr,
+        perms:a.perms||{},
+        pinSet:a.pinSet||a.pinset||false,
+        roleTitle:a.roleTitle||a.roletitle||''
+      }));
     } else {
       // First run — seed default accounts
       _accs=[
@@ -949,7 +955,8 @@ async function loadAllFromDB(){
     _goalDefs=gd||{upsells:6,reviews:10,callbacks:0};
   } catch(e){
     console.error('DB load error:',e);
-    showToast('Database connection issue — check console');
+    showToast('Could not reach database — check your connection');
+    hideLoader();
   }
   hideLoader();
 }
@@ -958,21 +965,39 @@ async function loadAllFromDB(){
 function getAccs(){return _accs;}
 function saveAccs(a){
   _accs=a;
-  a.forEach(acc=>{
-    sbFetch('pd_accounts?id=eq.'+acc.id,{method:'PATCH',body:JSON.stringify(acc)}).then(r=>{
-      if(!r) sbFetch('pd_accounts',{method:'POST',body:JSON.stringify([acc]),headers:{'Prefer':'resolution=merge-duplicates'}});
-    });
+  // Upsert all accounts at once
+  sbFetch('pd_accounts',{
+    method:'POST',
+    body:JSON.stringify(a),
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+  });
+}
+function saveOneAcc(acc){
+  // Update a single account by id
+  const idx=_accs.findIndex(a=>a.id===acc.id);
+  if(idx>-1) _accs[idx]=acc;
+  sbFetch('pd_accounts',{
+    method:'POST',
+    body:JSON.stringify([acc]),
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
   });
 }
 function getTechs(){return _accs.filter(a=>a.type==='tech');}
 function allData(){return _data;}
 function saveData(d){_data=d;}
 async function pushEntry(entry){
-  const r=await sbFetch('pd_entries',{method:'POST',body:JSON.stringify([entry]),headers:{'Prefer':'resolution=merge-duplicates'}});
-  return r;
+  await sbFetch('pd_entries',{
+    method:'POST',
+    body:JSON.stringify([entry]),
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+  });
 }
 async function updateEntry(entry){
-  await sbFetch('pd_entries?id=eq.'+entry.id,{method:'PATCH',body:JSON.stringify(entry)});
+  await sbFetch('pd_entries',{
+    method:'POST',
+    body:JSON.stringify([entry]),
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+  });
 }
 async function deleteEntryDB(id){
   await sbFetch('pd_entries?id=eq.'+id,{method:'DELETE'});
@@ -980,7 +1005,11 @@ async function deleteEntryDB(id){
 function getDeds(){return _deds;}
 function saveDeds(d){_deds=d;}
 async function pushDed(ded){
-  await sbFetch('pd_deductions',{method:'POST',body:JSON.stringify([ded]),headers:{'Prefer':'resolution=merge-duplicates'}});
+  await sbFetch('pd_deductions',{
+    method:'POST',
+    body:JSON.stringify([ded]),
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+  });
 }
 async function deleteDedDB(id){
   await sbFetch('pd_deductions?id=eq.'+id,{method:'DELETE'});
@@ -1589,30 +1618,46 @@ function saveAccount(){
   const pin=document.getElementById('acc-pin').value.trim();if(pin.length!==4||isNaN(pin)){showToast('PIN must be exactly 4 digits');return;}
   const type=document.getElementById('acc-type').value;
   const rates=type==='tech'?{start:+document.getElementById('er-start').value||100,checklist:+document.getElementById('er-ck').value||10,late:+document.getElementById('er-late').value||50,lf:+document.getElementById('er-lf').value||50,complaint:+document.getElementById('er-comp').value||25,callback:+document.getElementById('er-cb').value||50,badrev:+document.getElementById('er-badrev').value||100,goodrev:+document.getElementById('er-goodrev').value||7.5,commission:+document.getElementById('er-comm').value||0.30,commissionTier2:+document.getElementById('er-comm2').value||0.40,attendance:+document.getElementById('er-att').value||50,van:+document.getElementById('er-van').value||20,happy:+document.getElementById('er-happy').value||10,nocallback:+document.getElementById('er-ncb').value||50,ontime:+document.getElementById('er-ot').value||50}:defaultRates();
-  const perms=getPermOverrides();const accs=getAccs();
+  const perms=getPermOverrides();
   if(editAccId){
-    const idx=accs.findIndex(a=>a.id===editAccId);
-    if(idx>-1)accs[idx]={...accs[idx],name,roleTitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinSet:true,perms,rates};
+    const idx=_accs.findIndex(a=>a.id===editAccId);
+    if(idx>-1){
+      _accs[idx]={..._accs[idx],name,roleTitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinSet:true,perms,rates};
+      saveOneAcc(_accs[idx]);
+    }
     addAudit('Account updated',name);showToast(name+' updated');
   } else {
-    accs.push({id:uid(),name,roleTitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinSet:true,perms,rates});
+    const newAcc={id:uid(),name,roleTitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinSet:true,perms,rates};
+    _accs.push(newAcc);
+    saveOneAcc(newAcc);
     addAudit('Account created',name+' ('+type+')');showToast(name+' added');
   }
-  saveAccs(accs);closeModal('acc-modal');buildToggles();renderAccList();populateSels();renderAll();
+  closeModal('acc-modal');buildToggles();renderAccList();populateSels();renderAll();
 }
 function deleteAcc(id){
-  if(getAccs().filter(a=>a.type==='owner').length<=1&&getAccs().find(a=>a.id===id)?.type==='owner'){showToast('Cannot remove last owner');return;}
-  if(!confirm('Remove this account?'))return;const name=getAccs().find(a=>a.id===id)?.name||id;
-  saveAccs(getAccs().filter(a=>a.id!==id));addAudit('Account removed',name);buildToggles();renderAccList();populateSels();renderAll();showToast('Removed');
+  if(_accs.filter(a=>a.type==='owner').length<=1&&_accs.find(a=>a.id===id)?.type==='owner'){showToast('Cannot remove last owner');return;}
+  if(!confirm('Remove this account?'))return;
+  const name=_accs.find(a=>a.id===id)?.name||id;
+  _accs=_accs.filter(a=>a.id!==id);
+  sbFetch('pd_accounts?id=eq.'+id,{method:'DELETE'});
+  addAudit('Account removed',name);buildToggles();renderAccList();populateSels();renderAll();showToast('Removed');
 }
+
 
 // ── CHANGE PIN ──
 function openChangePIN(){document.getElementById('cp-cur').value='';document.getElementById('cp-new').value='';document.getElementById('cp-con').value='';document.getElementById('cp-err').textContent='';document.getElementById('pin-change-modal').classList.add('open');}
 function doChangePIN(){
   const cur=document.getElementById('cp-cur').value;const nw=document.getElementById('cp-new').value;const con=document.getElementById('cp-con').value;const err=document.getElementById('cp-err');
-  if(cur!==currentUser.pin){err.textContent='Current PIN incorrect';return;}if(nw.length!==4||isNaN(nw)){err.textContent='New PIN must be 4 digits';return;}if(nw!==con){err.textContent='PINs do not match';return;}
+  if(cur!==currentUser.pin){err.textContent='Current PIN incorrect';return;}
+  if(nw.length!==4||isNaN(nw)){err.textContent='New PIN must be 4 digits';return;}
+  if(nw!==con){err.textContent='PINs do not match';return;}
   const idx=_accs.findIndex(a=>a.id===currentUser.id);
-  if(idx>-1){_accs[idx].pin=nw;_accs[idx].pinSet=true;currentUser.pin=nw;saveAccs(_accs);}
+  if(idx>-1){
+    _accs[idx].pin=nw;
+    _accs[idx].pinSet=true;
+    currentUser.pin=nw;
+    saveOneAcc(_accs[idx]);
+  }
   addAudit('PIN changed',currentUser.name);closeModal('pin-change-modal');showToast('PIN updated');
 }
 
@@ -1666,9 +1711,18 @@ function pinPress(k){if(k==='⌫')pinBuffer=pinBuffer.slice(0,-1);else if(pinBuf
 function checkPin(){if(!pinTarget)return;if(pinBuffer===pinTarget.pin)loginUser(pinTarget);else{document.getElementById('pin-err').textContent='Incorrect PIN — try again';pinBuffer='';renderPinDots();}}
 function submitNewPin(){
   const p1=document.getElementById('np1').value;const p2=document.getElementById('np2').value;
-  if(p1.length!==4||isNaN(p1)){showToast('PIN must be 4 digits');return;}if(p1!==p2){showToast('PINs do not match');return;}
-  const accs=getAccs();const idx=accs.findIndex(a=>a.id===pinTarget.id);
-  if(idx>-1){accs[idx].pin=p1;accs[idx].pinSet=true;saveAccs(accs);pinTarget={...accs[idx]};}
+  if(p1.length!==4||isNaN(p1)){showToast('PIN must be 4 digits');return;}
+  if(p1!==p2){showToast('PINs do not match');return;}
+  const idx=_accs.findIndex(a=>a.id===pinTarget.id);
+  if(idx>-1){
+    _accs[idx].pin=p1;
+    _accs[idx].pinSet=true;
+    pinTarget={..._accs[idx]};
+    saveOneAcc(_accs[idx]);
+  }
+  addAudit('PIN set (first login)',pinTarget.name);
+  loginUser(pinTarget);
+}
   addAudit('PIN set (first login)',pinTarget.name);loginUser(pinTarget);
 }
 function loginUser(acc){
