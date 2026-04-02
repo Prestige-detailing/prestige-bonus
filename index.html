@@ -894,12 +894,17 @@ const SUPA_URL='https://rigaahabcbfdvdqaurpd.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpZ2FhaGFiY2JmZHZkcWF1cnBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzM1OTIsImV4cCI6MjA5MDcwOTU5Mn0.y3pmoD8S0q7J0RRLSxcPhjiTX2J5mv4Zj3Bnj39rOUc';
 
 async function sbFetch(path,opts={}){
+  const defaultHeaders={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
+  // Only add default Prefer for GET requests — POST/PATCH/DELETE set their own
+  if(!opts.method||opts.method==='GET') defaultHeaders['Prefer']='return=representation';
   const res=await fetch(SUPA_URL+'/rest/v1/'+path,{
-    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'return=representation',...(opts.headers||{})},
+    headers:{...defaultHeaders,...(opts.headers||{})},
     ...opts
   });
-  if(!res.ok){const e=await res.text();console.error('Supabase error:',e);return null;}
-  const text=await res.text();return text?JSON.parse(text):null;
+  // 204 No Content = success with no body (PATCH/DELETE with return=minimal)
+  if(res.status===204) return true;
+  if(!res.ok){const e=await res.text();console.error('Supabase error',res.status,path,e);return null;}
+  const text=await res.text();return text?JSON.parse(text):true;
 }
 
 // In-memory cache — synced from Supabase on login, written back on every change
@@ -997,13 +1002,34 @@ function saveAccs(a){
   });
 }
 function saveOneAcc(acc){
-  // Update a single account by id
   const idx=_accs.findIndex(a=>a.id===acc.id);
   if(idx>-1) _accs[idx]=acc;
-  sbFetch('pd_accounts',{
-    method:'POST',
-    body:JSON.stringify([acc]),
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+  // PATCH by id — correct Supabase REST syntax
+  const payload={
+    name:acc.name,
+    roletitle:acc.roletitle,
+    type:acc.type,
+    color:acc.color,
+    pin:acc.pin,
+    pinset:acc.pinset,
+    perms:acc.perms,
+    rates:acc.rates
+  };
+  sbFetch('pd_accounts?id=eq.'+encodeURIComponent(acc.id),{
+    method:'PATCH',
+    body:JSON.stringify(payload),
+    headers:{'Prefer':'return=minimal'}
+  }).then(r=>{
+    if(r===null){
+      console.warn('PATCH failed for',acc.id,'— falling back to upsert');
+      sbFetch('pd_accounts',{
+        method:'POST',
+        body:JSON.stringify([acc]),
+        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+      });
+    } else {
+      console.log('Account saved:',acc.id,'pinset:',acc.pinset);
+    }
   });
 }
 function getTechs(){return _accs.filter(a=>a.type==='tech');}
