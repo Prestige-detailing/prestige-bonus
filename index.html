@@ -1425,7 +1425,7 @@ function deleteEntry(idx){
 }
 
 // ── SAVE ENTRY ──
-function saveEntry(){
+async function saveEntry(){
   if(!currentUser||!getPerms(currentUser).entry){showToast('You do not have permission to log entries');return;}
   const dt=document.getElementById('ed').value;if(!dt){showToast('Select a date first');return;}
   const empName=getAccs().find(a=>a.id===cTech)?.name||cTech;
@@ -1447,22 +1447,36 @@ function saveEntry(){
     logged_by:currentUser?.name||'?',
     logged_at:new Date().toISOString()
   };
-  if(dupIdx>-1){
-    if(!confirm('Entry for '+empName+' on '+dt+' already exists. Replace it?'))return;
-    entry.edited_at=new Date().toISOString();entry.edited_by=currentUser?.name||'?';
-    _data[dupIdx]=entry;
-    updateEntry(entry);
-    addAudit('Entry replaced','Date: '+dt+' | Emp: '+empName);
-    showToast('Entry updated for '+empName);
-  } else {
-    _data.push(entry);
-    pushEntry(entry);
-    addAudit('Entry created','Date: '+dt+' | Emp: '+empName);
-    showToast('Saved for '+empName);
+  showToast('Saving...');
+  try {
+    const result=await sbFetch('pd_entries',{
+      method:'POST',
+      body:JSON.stringify([entry]),
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+    });
+    console.log('Entry save result:',result,'for entry id:',entry.id);
+    if(result===null){
+      showToast('Error saving — check console');
+      console.error('Entry failed to save:',entry);
+      return;
+    }
+    if(dupIdx>-1){
+      entry.edited_at=new Date().toISOString();entry.edited_by=currentUser?.name||'?';
+      _data[dupIdx]=entry;
+      addAudit('Entry replaced','Date: '+dt+' | Emp: '+empName);
+      showToast('Entry updated for '+empName);
+    } else {
+      _data.push(entry);
+      addAudit('Entry created','Date: '+dt+' | Emp: '+empName);
+      showToast('Saved for '+empName);
+    }
+    ['eu','ec','egr','ebr','en'].forEach(id=>document.getElementById(id).value='');
+    ['el','elf','eco','ecb'].forEach(id=>document.getElementById(id).value='0');
+    populateSels();renderAll();
+  } catch(e){
+    console.error('saveEntry error:',e);
+    showToast('Save failed: '+e.message);
   }
-  ['eu','ec','egr','ebr','en'].forEach(id=>document.getElementById(id).value='');
-  ['el','elf','eco','ecb'].forEach(id=>document.getElementById(id).value='0');
-  populateSels();renderAll();
 }
 
 // ── EMAIL CENTER ──
