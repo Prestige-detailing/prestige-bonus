@@ -918,6 +918,19 @@ async function ensureTables(){
 async function loadAllFromDB(){
   showLoader('Connecting to database...');
   try {
+    // Test connection first
+    const testRes=await fetch(SUPA_URL+'/rest/v1/pd_accounts?limit=1',{
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
+    });
+    if(!testRes.ok){
+      const errText=await testRes.text();
+      console.error('Supabase connection failed:',testRes.status,errText);
+      hideLoader();
+      showLoader('Database error — check console ('+testRes.status+')');
+      setTimeout(hideLoader,4000);
+      return;
+    }
+
     const [accs,entries,deds,audit,cfgRows,goalRows]=await Promise.all([
       sbFetch('pd_accounts?order=created_at.asc'),
       sbFetch('pd_entries?order=date.asc'),
@@ -926,6 +939,9 @@ async function loadAllFromDB(){
       sbFetch('pd_config?limit=1'),
       sbFetch('pd_goals')
     ]);
+
+    console.log('DB loaded — accounts:',accs?.length,'entries:',entries?.length,'deds:',deds?.length);
+
     const dr=defaultRates();
     if(accs&&accs.length){
       _accs=accs.map(a=>({
@@ -936,13 +952,19 @@ async function loadAllFromDB(){
         roleTitle:a.roleTitle||a.roletitle||''
       }));
     } else {
-      // First run — seed default accounts
+      console.log('No accounts found — seeding defaults');
+      const dr=defaultRates();
       _accs=[
         {id:'owner_ig',name:'Isaiaih Gomez',roleTitle:'Owner',type:'owner',color:'#44a2e6',pin:'0000',pinSet:false,perms:{},rates:dr},
         {id:'luis',name:'Luis Gonzalez',roleTitle:'Lead Technician',type:'tech',color:'#44a2e6',pin:'1234',pinSet:true,perms:{},rates:dr},
         {id:'anthony',name:'Anthony',roleTitle:'Technician',type:'tech',color:'#111111',pin:'5678',pinSet:true,perms:{},rates:dr}
       ];
-      await sbFetch('pd_accounts',{method:'POST',body:JSON.stringify(_accs),headers:{'Prefer':'resolution=merge-duplicates'}});
+      const seedResult=await sbFetch('pd_accounts',{
+        method:'POST',
+        body:JSON.stringify(_accs),
+        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+      });
+      console.log('Seed result:',seedResult);
     }
     _data=entries||[];
     _deds=deds||[];
@@ -955,8 +977,10 @@ async function loadAllFromDB(){
     _goalDefs=gd||{upsells:6,reviews:10,callbacks:0};
   } catch(e){
     console.error('DB load error:',e);
-    showToast('Could not reach database — check your connection');
     hideLoader();
+    showLoader('Connection failed: '+e.message);
+    setTimeout(hideLoader,4000);
+    return;
   }
   hideLoader();
 }
