@@ -1036,18 +1036,22 @@ function getTechs(){return _accs.filter(a=>a.type==='tech');}
 function allData(){return _data;}
 function saveData(d){_data=d;}
 async function pushEntry(entry){
-  await sbFetch('pd_entries',{
+  const result=await sbFetch('pd_entries',{
     method:'POST',
-    body:JSON.stringify([entry]),
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+    body:JSON.stringify(entry),
+    headers:{'Prefer':'return=minimal'}
   });
+  console.log('pushEntry result:',result,'id:',entry.id);
+  return result;
 }
 async function updateEntry(entry){
-  await sbFetch('pd_entries',{
-    method:'POST',
-    body:JSON.stringify([entry]),
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+  const result=await sbFetch('pd_entries?id=eq.'+encodeURIComponent(entry.id),{
+    method:'PATCH',
+    body:JSON.stringify(entry),
+    headers:{'Prefer':'return=minimal'}
   });
+  console.log('updateEntry result:',result,'id:',entry.id);
+  return result;
 }
 async function deleteEntryDB(id){
   await sbFetch('pd_entries?id=eq.'+id,{method:'DELETE'});
@@ -1055,20 +1059,22 @@ async function deleteEntryDB(id){
 function getDeds(){return _deds;}
 function saveDeds(d){_deds=d;}
 async function pushDed(ded){
-  await sbFetch('pd_deductions',{
+  const result=await sbFetch('pd_deductions',{
     method:'POST',
-    body:JSON.stringify([ded]),
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
+    body:JSON.stringify(ded),
+    headers:{'Prefer':'return=minimal'}
   });
+  console.log('pushDed result:',result);
+  return result;
 }
 async function deleteDedDB(id){
-  await sbFetch('pd_deductions?id=eq.'+id,{method:'DELETE'});
+  await sbFetch('pd_deductions?id=eq.'+encodeURIComponent(id),{method:'DELETE'});
 }
 function getAudit(){return _audit;}
 function addAudit(action,detail){
   const entry={id:uid(),ts:new Date().toISOString(),who:currentUser?.name||'System',action,detail,created_at:new Date().toISOString()};
   _audit.unshift(entry);if(_audit.length>500)_audit.splice(400);
-  sbFetch('pd_audit',{method:'POST',body:JSON.stringify([entry])});
+  sbFetch('pd_audit',{method:'POST',body:JSON.stringify(entry),headers:{'Prefer':'return=minimal'}});
 }
 function globalCfg(){return _cfg||defaultRates();}
 function defaultRates(){return{start:100,checklist:10,late:50,lf:50,complaint:25,callback:50,badrev:100,goodrev:7.5,commission:0.30,commissionTier2:0.40,attendance:50,van:20,happy:10,nocallback:50,ontime:50};}
@@ -1449,19 +1455,21 @@ async function saveEntry(){
   };
   showToast('Saving...');
   try {
-    const result=await sbFetch('pd_entries',{
-      method:'POST',
-      body:JSON.stringify([entry]),
-      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
-    });
-    console.log('Entry save result:',result,'for entry id:',entry.id);
+    let result;
+    if(dupIdx>-1){
+      if(!confirm('Entry for '+empName+' on '+dt+' already exists. Replace it?'))return;
+      entry.edited_at=new Date().toISOString();
+      entry.edited_by=currentUser?.name||'?';
+      result=await updateEntry(entry);
+    } else {
+      result=await pushEntry(entry);
+    }
+    console.log('Save result:',result);
     if(result===null){
       showToast('Error saving — check console');
-      console.error('Entry failed to save:',entry);
       return;
     }
     if(dupIdx>-1){
-      entry.edited_at=new Date().toISOString();entry.edited_by=currentUser?.name||'?';
       _data[dupIdx]=entry;
       addAudit('Entry replaced','Date: '+dt+' | Emp: '+empName);
       showToast('Entry updated for '+empName);
