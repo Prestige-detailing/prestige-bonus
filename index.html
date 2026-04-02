@@ -1747,8 +1747,6 @@ function submitNewPin(){
   addAudit('PIN set (first login)',pinTarget.name);
   loginUser(pinTarget);
 }
-  addAudit('PIN set (first login)',pinTarget.name);loginUser(pinTarget);
-}
 function loginUser(acc){
   currentUser=acc;document.getElementById('pin-screen').style.display='none';document.getElementById('app').style.display='flex';
   const rp=ROLES[acc.type]||ROLES.tech;document.getElementById('session-who').textContent=acc.name;document.getElementById('session-role').textContent=rp.label;document.getElementById('session-role').className='role-pill '+rp.cls;
