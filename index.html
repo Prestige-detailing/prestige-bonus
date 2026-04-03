@@ -893,195 +893,142 @@ const PAGE_META={entry:['Daily Entry','Log technician performance'],summary:['Su
 const SUPA_URL='https://rigaahabcbfdvdqaurpd.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpZ2FhaGFiY2JmZHZkcWF1cnBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzM1OTIsImV4cCI6MjA5MDcwOTU5Mn0.y3pmoD8S0q7J0RRLSxcPhjiTX2J5mv4Zj3Bnj39rOUc';
 
-async function sbFetch(path,opts={}){
-  const defaultHeaders={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
-  // Only add default Prefer for GET requests — POST/PATCH/DELETE set their own
-  if(!opts.method||opts.method==='GET') defaultHeaders['Prefer']='return=representation';
-  const res=await fetch(SUPA_URL+'/rest/v1/'+path,{
-    headers:{...defaultHeaders,...(opts.headers||{})},
-    ...opts
-  });
-  // 204 No Content = success with no body (PATCH/DELETE with return=minimal)
-  if(res.status===204) return true;
-  if(!res.ok){const e=await res.text();console.error('Supabase error',res.status,path,e);return null;}
-  const text=await res.text();return text?JSON.parse(text):true;
+// Core fetch — handles all Supabase REST calls correctly
+async function sbFetch(path, method, body, extraHeaders){
+  const headers={
+    'apikey':SUPA_KEY,
+    'Authorization':'Bearer '+SUPA_KEY,
+    'Content-Type':'application/json',
+    ...extraHeaders
+  };
+  const opts={method:method||'GET',headers};
+  if(body!==undefined) opts.body=JSON.stringify(body);
+  try {
+    const res=await fetch(SUPA_URL+'/rest/v1/'+path,opts);
+    // 200, 201 Created, 204 No Content — all success
+    if(res.status===200||res.status===201||res.status===204){
+      const text=await res.text();
+      return text?JSON.parse(text):true;
+    }
+    const errText=await res.text();
+    console.error('DB error',res.status,path,errText);
+    return null;
+  } catch(e){
+    console.error('DB fetch error:',path,e.message);
+    return null;
+  }
 }
 
-// In-memory cache — synced from Supabase on login, written back on every change
+// Convenience wrappers
+const db={
+  get:(table,query='')=>sbFetch(table+(query?'?'+query:''),'GET'),
+  insert:(table,row)=>sbFetch(table,'POST',[row],{'Prefer':'return=minimal'}),
+  update:(table,id,data)=>sbFetch(table+'?id=eq.'+encodeURIComponent(id),'PATCH',data,{'Prefer':'return=minimal'}),
+  upsert:(table,rows)=>sbFetch(table,'POST',Array.isArray(rows)?rows:[rows],{'Prefer':'resolution=merge-duplicates,return=minimal'}),
+  delete:(table,id)=>sbFetch(table+'?id=eq.'+encodeURIComponent(id),'DELETE')
+};
+
+// In-memory cache
 let _accs=[],_data=[],_deds=[],_audit=[],_cfg=null,_goalDefs=null,_goals={};
-let _dbReady=false;
-
-// ── TABLE SETUP ──
-async function ensureTables(){
-  // Create tables via Supabase SQL editor is preferred, but we use upsert logic
-  // Tables needed: pd_accounts, pd_entries, pd_deductions, pd_audit, pd_config, pd_goals
-  // We'll create them by attempting inserts and catching — Supabase auto-creates via the dashboard
-  // Instead we use the REST API with insert and handle gracefully
-  _dbReady=true;
-}
 
 async function loadAllFromDB(){
   showLoader('Connecting to database...');
   try {
-    // Test connection first
-    const testRes=await fetch(SUPA_URL+'/rest/v1/pd_accounts?limit=1',{
-      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
-    });
-    if(!testRes.ok){
-      const errText=await testRes.text();
-      console.error('Supabase connection failed:',testRes.status,errText);
-      hideLoader();
-      showLoader('Database error — check console ('+testRes.status+')');
-      setTimeout(hideLoader,4000);
-      return;
-    }
-
     const [accs,entries,deds,audit,cfgRows,goalRows]=await Promise.all([
-      sbFetch('pd_accounts?order=created_at.asc'),
-      sbFetch('pd_entries?order=date.asc'),
-      sbFetch('pd_deductions?order=date.asc'),
-      sbFetch('pd_audit?order=created_at.desc&limit=500'),
-      sbFetch('pd_config?limit=1'),
-      sbFetch('pd_goals')
+      db.get('pd_accounts','order=created_at.asc'),
+      db.get('pd_entries','order=date.asc'),
+      db.get('pd_deductions','order=date.asc'),
+      db.get('pd_audit','order=created_at.desc&limit=500'),
+      db.get('pd_config','limit=1'),
+      db.get('pd_goals')
     ]);
-
-    console.log('DB loaded — accounts:',accs?.length,'entries:',entries?.length,'deds:',deds?.length);
-
+    console.log('DB loaded — accounts:',accs?.length??'err','entries:',entries?.length??'err','deds:',deds?.length??'err');
     const dr=defaultRates();
     if(accs&&accs.length){
-      _accs=accs.map(a=>({
-        ...a,
-        rates:a.rates||dr,
-        perms:a.perms||{},
-        pinset:a.pinset||false,
-        roletitle:a.roletitle||''
-      }));
+      _accs=accs.map(a=>({...a,rates:a.rates||dr,perms:a.perms||{},pinset:a.pinset||false,roletitle:a.roletitle||''}));
     } else {
-      console.log('No accounts found — seeding defaults');
-      const dr=defaultRates();
       _accs=[
         {id:'owner_ig',name:'Isaiaih Gomez',roletitle:'Owner',type:'owner',color:'#44a2e6',pin:'0000',pinset:false,perms:{},rates:dr},
         {id:'luis',name:'Luis Gonzalez',roletitle:'Lead Technician',type:'tech',color:'#44a2e6',pin:'1234',pinset:true,perms:{},rates:dr},
         {id:'anthony',name:'Anthony',roletitle:'Technician',type:'tech',color:'#111111',pin:'5678',pinset:true,perms:{},rates:dr}
       ];
-      const seedResult=await sbFetch('pd_accounts',{
-        method:'POST',
-        body:JSON.stringify(_accs),
-        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
-      });
-      console.log('Seed result:',seedResult);
+      await db.upsert('pd_accounts',_accs);
     }
-    _data=entries||[];
-    _deds=deds||[];
-    _audit=audit||[];
+    _data=Array.isArray(entries)?entries:[];
+    _deds=Array.isArray(deds)?deds:[];
+    _audit=Array.isArray(audit)?audit:[];
     _cfg=cfgRows&&cfgRows.length?cfgRows[0].data:null;
-    if(goalRows&&goalRows.length){
-      goalRows.forEach(g=>{_goals[g.key]=g.data;});
-    }
-    const gd=cfgRows&&cfgRows.length?cfgRows[0].goal_defaults:null;
-    _goalDefs=gd||{upsells:6,reviews:10,callbacks:0};
+    _goalDefs=cfgRows&&cfgRows.length?cfgRows[0].goal_defaults:null;
+    _goalDefs=_goalDefs||{upsells:6,reviews:10,callbacks:0};
+    if(Array.isArray(goalRows)) goalRows.forEach(g=>{_goals[g.key]=g.data;});
   } catch(e){
-    console.error('DB load error:',e);
-    hideLoader();
-    showLoader('Connection failed: '+e.message);
-    setTimeout(hideLoader,4000);
-    return;
+    console.error('loadAllFromDB error:',e);
   }
   hideLoader();
 }
 
-// ── SYNC FUNCTIONS ──
+// Data accessors
 function getAccs(){return _accs;}
+function getTechs(){return _accs.filter(a=>a.type==='tech');}
+function allData(){return _data;}
+function getDeds(){return _deds;}
+function getAudit(){return _audit;}
+function globalCfg(){return _cfg||defaultRates();}
+function defaultRates(){return{start:100,checklist:10,late:50,lf:50,complaint:25,callback:50,badrev:100,goodrev:7.5,commission:0.30,commissionTier2:0.40,attendance:50,van:20,happy:10,nocallback:50,ontime:50};}
+function getGoalDefaults(){return _goalDefs||{upsells:6,reviews:10,callbacks:0};}
+
+// Account writes
 function saveAccs(a){
   _accs=a;
-  // Upsert all accounts at once
-  sbFetch('pd_accounts',{
-    method:'POST',
-    body:JSON.stringify(a),
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
-  });
+  db.upsert('pd_accounts',a);
 }
 function saveOneAcc(acc){
   const idx=_accs.findIndex(a=>a.id===acc.id);
   if(idx>-1) _accs[idx]=acc;
-  // PATCH by id — correct Supabase REST syntax
-  const payload={
-    name:acc.name,
-    roletitle:acc.roletitle,
-    type:acc.type,
-    color:acc.color,
-    pin:acc.pin,
-    pinset:acc.pinset,
-    perms:acc.perms,
-    rates:acc.rates
-  };
-  sbFetch('pd_accounts?id=eq.'+encodeURIComponent(acc.id),{
-    method:'PATCH',
-    body:JSON.stringify(payload),
-    headers:{'Prefer':'return=minimal'}
-  }).then(r=>{
-    if(r===null){
-      console.warn('PATCH failed for',acc.id,'— falling back to upsert');
-      sbFetch('pd_accounts',{
-        method:'POST',
-        body:JSON.stringify([acc]),
-        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}
-      });
-    } else {
-      console.log('Account saved:',acc.id,'pinset:',acc.pinset);
-    }
-  });
+  db.update('pd_accounts',acc.id,{name:acc.name,roletitle:acc.roletitle,type:acc.type,color:acc.color,pin:acc.pin,pinset:acc.pinset,perms:acc.perms,rates:acc.rates})
+    .then(r=>console.log('saveOneAcc:',acc.id,'pinset:',acc.pinset,'result:',r));
 }
-function getTechs(){return _accs.filter(a=>a.type==='tech');}
-function allData(){return _data;}
-function saveData(d){_data=d;}
+
+// Entry writes
 async function pushEntry(entry){
-  const result=await sbFetch('pd_entries',{
-    method:'POST',
-    body:JSON.stringify(entry),
-    headers:{'Prefer':'return=minimal'}
-  });
-  console.log('pushEntry result:',result,'id:',entry.id);
-  return result;
+  const r=await db.insert('pd_entries',entry);
+  console.log('pushEntry:',entry.id,r);
+  return r;
 }
 async function updateEntry(entry){
-  const result=await sbFetch('pd_entries?id=eq.'+encodeURIComponent(entry.id),{
-    method:'PATCH',
-    body:JSON.stringify(entry),
-    headers:{'Prefer':'return=minimal'}
-  });
-  console.log('updateEntry result:',result,'id:',entry.id);
-  return result;
+  const r=await db.update('pd_entries',entry.id,entry);
+  console.log('updateEntry:',entry.id,r);
+  return r;
 }
 async function deleteEntryDB(id){
-  await sbFetch('pd_entries?id=eq.'+id,{method:'DELETE'});
+  return db.delete('pd_entries',id);
 }
-function getDeds(){return _deds;}
-function saveDeds(d){_deds=d;}
+
+// Deduction writes
 async function pushDed(ded){
-  const result=await sbFetch('pd_deductions',{
-    method:'POST',
-    body:JSON.stringify(ded),
-    headers:{'Prefer':'return=minimal'}
-  });
-  console.log('pushDed result:',result);
-  return result;
+  const r=await db.insert('pd_deductions',ded);
+  console.log('pushDed:',ded.id,r);
+  return r;
 }
 async function deleteDedDB(id){
-  await sbFetch('pd_deductions?id=eq.'+encodeURIComponent(id),{method:'DELETE'});
+  return db.delete('pd_deductions',id);
 }
-function getAudit(){return _audit;}
+
+// Audit writes
 function addAudit(action,detail){
-  const entry={id:uid(),ts:new Date().toISOString(),who:currentUser?.name||'System',action,detail,created_at:new Date().toISOString()};
-  _audit.unshift(entry);if(_audit.length>500)_audit.splice(400);
-  sbFetch('pd_audit',{method:'POST',body:JSON.stringify(entry),headers:{'Prefer':'return=minimal'}});
+  const row={id:uid(),ts:new Date().toISOString(),who:currentUser?.name||'System',action,detail,created_at:new Date().toISOString()};
+  _audit.unshift(row);if(_audit.length>500)_audit.splice(400);
+  db.insert('pd_audit',row);
 }
-function globalCfg(){return _cfg||defaultRates();}
-function defaultRates(){return{start:100,checklist:10,late:50,lf:50,complaint:25,callback:50,badrev:100,goodrev:7.5,commission:0.30,commissionTier2:0.40,attendance:50,van:20,happy:10,nocallback:50,ontime:50};}
-function getGoalDefaults(){return _goalDefs||{upsells:6,reviews:10,callbacks:0};}
+
+// Config / goals writes
+function saveGlobalCfg(g){
+  _cfg=g;
+  db.upsert('pd_config',{id:'main',data:g,goal_defaults:_goalDefs||getGoalDefaults()});
+}
 function saveGoalDefaults2(d){
   _goalDefs=d;
-  sbFetch('pd_config',{method:'POST',body:JSON.stringify([{id:'main',data:_cfg||defaultRates(),goal_defaults:d}]),headers:{'Prefer':'resolution=merge-duplicates'}});
+  db.upsert('pd_config',{id:'main',data:_cfg||defaultRates(),goal_defaults:d});
 }
 function getGoal(empId,monthKey,weekSlot){
   const key=`goal_${empId}_${monthKey}_W${weekSlot}`;
@@ -1090,8 +1037,9 @@ function getGoal(empId,monthKey,weekSlot){
 function saveGoal(empId,monthKey,weekSlot,goal){
   const key=`goal_${empId}_${monthKey}_W${weekSlot}`;
   _goals[key]=goal;
-  sbFetch('pd_goals',{method:'POST',body:JSON.stringify([{key,data:goal}]),headers:{'Prefer':'resolution=merge-duplicates'}});
+  db.upsert('pd_goals',{key,data:goal});
 }
+
 
 // ── LOADER ──
 function showLoader(msg){
@@ -1743,8 +1691,7 @@ function renderAudit(){
 function loadGlobal(){const g=globalCfg();const map={start:'gs-start',checklist:'gs-ck',late:'gs-late',lf:'gs-lf',complaint:'gs-comp',callback:'gs-cb',badrev:'gs-badrev',goodrev:'gs-goodrev',commission:'gs-comm',commissionTier2:'gs-comm2',attendance:'gs-att',van:'gs-van',happy:'gs-happy',nocallback:'gs-ncb',ontime:'gs-ot'};Object.entries(map).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=g[k]||defaultRates()[k];});}
 function saveGlobal(){
   const g={start:+document.getElementById('gs-start').value||100,checklist:+document.getElementById('gs-ck').value||10,late:+document.getElementById('gs-late').value||50,lf:+document.getElementById('gs-lf').value||50,complaint:+document.getElementById('gs-comp').value||25,callback:+document.getElementById('gs-cb').value||50,badrev:+document.getElementById('gs-badrev').value||100,goodrev:+document.getElementById('gs-goodrev').value||7.5,commission:+document.getElementById('gs-comm').value||0.30,commissionTier2:+document.getElementById('gs-comm2').value||0.40,attendance:+document.getElementById('gs-att').value||50,van:+document.getElementById('gs-van').value||20,happy:+document.getElementById('gs-happy').value||10,nocallback:+document.getElementById('gs-ncb').value||50,ontime:+document.getElementById('gs-ot').value||50};
-  _cfg=g;
-  sbFetch('pd_config',{method:'POST',body:JSON.stringify([{id:'main',data:g,goal_defaults:_goalDefs||getGoalDefaults()}]),headers:{'Prefer':'resolution=merge-duplicates'}});
+  saveGlobalCfg(g);
   addAudit('Global settings updated','');showToast('Settings saved');
 }
 
