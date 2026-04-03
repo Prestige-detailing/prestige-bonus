@@ -892,10 +892,10 @@ function getBonusToggles(){
 function getActiveLines(acc){
   return acc.rates?.activeLines||defaultActiveLines();
 }
+const ALL_PERMS=[
   {key:'entry',label:'Submit daily entries'},
   {key:'editEntry',label:'Edit entries'},
   {key:'viewAllEmps',label:'View all employee summaries'},
-  {key:'leaderboard',label:'View leaderboard'},
   {key:'deductions',label:'Add custom deductions'},
   {key:'audit',label:'View audit log'},
   {key:'accounts',label:'Manage accounts'},
@@ -1184,7 +1184,7 @@ function calcWeek(empId,monthKey,weekSlot){
   const brPen=al.badrev?br*s.badrev:0;
   const qualityBase=s.start/4-ckPen-laPen-lfPen-coPen-cbPen-brPen-weekDedTotal+vanBon+hapBon+ncBon+otBon;
   const qualityTotal=Math.max(0,qualityBase);const total=upsellBonus+revBon+qualityTotal;
-  return{upsellSales,upsellBonus,revBon,missed,ckPen,lateN,lateF,laPen,lfPen,compN,coPen,cbN,cbPen,gr,br,brPen,weekDedTotal,vanBon,hapBon,ncBon,otBon,qualityTotal,total,s,emp,wkDone,weekSlot,hasEntries:data.length>0};
+  return{upsellSales,upsellBonus,revBon,missed,ckPen,lateN,lateF,laPen,lfPen,compN,coPen,cbN,cbPen,gr,br,brPen,weekDedTotal,vanBon,hapBon,ncBon,otBon,qualityTotal,total,s,emp,weekSlot,hasEntries:data.length>0};
 }
 
 // ── MONTHS ──
