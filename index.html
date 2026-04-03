@@ -423,10 +423,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
     Goals
   </button>
-  <button class="mob-tab" id="mtab-leaderboard" onclick="mobGo('leaderboard',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-    Ranks
-  </button>
   <button class="mob-tab" id="mtab-more" onclick="toggleMobMore()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
     More
@@ -474,9 +470,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
     <div class="nav-lbl">Reports</div>
     <button class="nb" id="nav-summary" onclick="go('summary',this)">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Summary & Overview
-    </button>
-    <button class="nb" id="nav-leaderboard" onclick="go('leaderboard',this)">
-      <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Leaderboard
     </button>
     <button class="nb" id="nav-log" onclick="go('log',this)">
       <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Entry Log
@@ -578,11 +571,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
       </div>
       <div id="sum-owner" style="display:none"><div class="owner-grid" style="margin-top:14px" id="og"></div></div>
     </div>
-
-    <!-- LEADERBOARD -->
-    <div id="leaderboard" class="sec">
-      <div class="frow"><label>Month</label><select id="lb-month-sel" onchange="renderLeaderboard()"></select></div>
-      <div class="lbg" id="lbg"></div>
+    <div class="lbg" id="lbg"></div>
       <div class="card"><div class="card-hdr"><div><div class="card-title">Month-over-Month</div><div class="card-sub">Net bonus — last 6 months</div></div></div><div id="trend-tbl" style="overflow-x:auto"></div></div>
     </div>
 
@@ -836,6 +825,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
         <div class="fi"><label>No Callback Bonus — per week $</label><input type="number" id="er-ncb" value="50"></div>
         <div class="fi"><label>On-Time Bonus — per week $</label><input type="number" id="er-ot" value="50"></div>
       </div>
+      <div class="fsec" style="margin-top:16px">Active Bonus & Penalty Lines <span style="font-weight:400;font-style:italic;font-size:11px;text-transform:none;letter-spacing:0">— uncheck to exclude from this employee's calculation</span></div>
+      <div class="perm-grid" id="bonus-toggle-grid"></div>
     </div>
 
     <div style="display:flex;gap:10px;margin-top:18px">
@@ -867,8 +858,40 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
 const COLORS=['#44a2e6','#1a9e6a','#d93025','#b86a00','#7c5cbf','#e8547a','#2d87cc','#0a7c5a','#c9a84c','#555'];
 const ROLES={owner:{label:'Owner',cls:'rp-owner'},admin:{label:'Admin',cls:'rp-admin'},manager:{label:'Manager',cls:'rp-manager'},viewer:{label:'Viewer',cls:'rp-viewer'},tech:{label:'Tech',cls:'rp-tech'}};
 
-// All toggleable permissions
-const ALL_PERMS=[
+// All toggleable bonus/penalty lines per employee
+const BONUS_LINES=[
+  {key:'van',label:'Van clean bonus/penalty'},
+  {key:'ontime',label:'On-time bonus/penalty'},
+  {key:'attendance',label:'Perfect attendance bonus/penalty'},
+  {key:'nocallback',label:'No-callback bonus'},
+  {key:'happy',label:'Happy customer bonus'},
+  {key:'checklist',label:'Checklist penalty'},
+  {key:'late',label:'Late arrival penalty'},
+  {key:'callback',label:'Callback penalty'},
+  {key:'badrev',label:'Bad review penalty'}
+];
+function defaultActiveLines(){
+  const a={};BONUS_LINES.forEach(l=>a[l.key]=true);return a;
+}
+function buildBonusToggleGrid(existingLines){
+  const active=existingLines||defaultActiveLines();
+  document.getElementById('bonus-toggle-grid').innerHTML=BONUS_LINES.map(l=>`
+    <label class="perm-item">
+      <input type="checkbox" id="bt-${l.key}" ${active[l.key]!==false?'checked':''}>
+      <label for="bt-${l.key}" style="cursor:pointer">${l.label}</label>
+    </label>`).join('');
+}
+function getBonusToggles(){
+  const a={};
+  BONUS_LINES.forEach(l=>{
+    const el=document.getElementById('bt-'+l.key);
+    if(el) a[l.key]=el.checked;
+  });
+  return a;
+}
+function getActiveLines(acc){
+  return acc.rates?.activeLines||defaultActiveLines();
+}
   {key:'entry',label:'Submit daily entries'},
   {key:'editEntry',label:'Edit entries'},
   {key:'viewAllEmps',label:'View all employee summaries'},
@@ -882,20 +905,20 @@ const ALL_PERMS=[
 
 // Role ceilings — what each role CAN do at maximum
 const ROLE_CEIL={
-  owner:{entry:true,editEntry:true,viewAllEmps:true,leaderboard:true,deductions:true,audit:true,accounts:true,cfg:true,email:true,log:true,summary:true},
-  admin:{entry:true,editEntry:true,viewAllEmps:true,leaderboard:true,deductions:true,audit:true,accounts:false,cfg:true,email:true,log:true,summary:true},
-  manager:{entry:true,editEntry:true,viewAllEmps:true,leaderboard:true,deductions:true,audit:true,accounts:false,cfg:false,email:true,log:true,summary:true},
-  viewer:{entry:false,editEntry:false,viewAllEmps:true,leaderboard:true,deductions:false,audit:false,accounts:false,cfg:false,email:true,log:true,summary:true},
-  tech:{entry:false,editEntry:false,viewAllEmps:false,leaderboard:true,deductions:false,audit:false,accounts:false,cfg:false,email:false,log:false,summary:true}
+  owner:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:true,cfg:true,email:true,log:true,summary:true},
+  admin:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:false,cfg:true,email:true,log:true,summary:true},
+  manager:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:false,cfg:false,email:true,log:true,summary:true},
+  viewer:{entry:false,editEntry:false,viewAllEmps:true,deductions:false,audit:false,accounts:false,cfg:false,email:true,log:true,summary:true},
+  tech:{entry:false,editEntry:false,viewAllEmps:false,deductions:false,audit:false,accounts:false,cfg:false,email:false,log:false,summary:true}
 };
 
 // Nav tab → permission key
-const NAV_PERMS={entry:'entry',summary:'summary',leaderboard:'leaderboard',log:'log',email:'email',goals:'leaderboard',accounts:'accounts',deductions:'deductions',audit:'audit',cfg:'cfg'};
+const NAV_PERMS={entry:'entry',summary:'summary',log:'log',email:'email',goals:'entry',accounts:'accounts',deductions:'deductions',audit:'audit',cfg:'cfg'};
 
 let selColor=COLORS[0],editAccId=null,editEntryIdx=null,sumView='breakdown',emailMode='weekly';
 let cTech='',sTech='',eTech='',eMailTech='';
 let currentUser=null,pinTarget=null,pinBuffer='';
-const PAGE_META={entry:['Daily Entry','Log technician performance'],summary:['Summary & Overview','Breakdown and owner comparison'],leaderboard:['Leaderboard','Monthly rankings'],log:['Entry Log','Full history with edit tracking'],email:['Email Center','Weekly updates and monthly summaries'],goals:['Goals & Targets','Weekly goals, progress, and head-to-head'],accounts:['Accounts','Manage profiles, roles, and rates'],deductions:['Custom Deductions','One-off deductions with notes'],audit:['Audit Log','Every action — who, what, when'],cfg:['Settings','Global default rates']};
+const PAGE_META={entry:['Daily Entry','Log technician performance'],summary:['Summary & Overview','Breakdown and owner comparison'],log:['Entry Log','Full history with edit tracking'],email:['Email Center','Weekly updates and monthly summaries'],goals:['Goals & Targets','Weekly goals, progress, and head-to-head'],accounts:['Accounts','Manage profiles, roles, and rates'],deductions:['Custom Deductions','One-off deductions with notes'],audit:['Audit Log','Every action — who, what, when'],cfg:['Settings','Global default rates']};
 
 // ── DATA ──
 // ── SUPABASE CONFIG ──
@@ -1112,17 +1135,24 @@ function calc(empId,monthKey){
   const lateWkCount=allEntryWks.filter(w=>lateWks.has(w)).length;
   const otWks=allEntryWks.filter(w=>!lateWks.has(w)).length;
   const happyWks=allEntryWks.filter(w=>!cbWks.has(w)&&!compWks.has(w)).length;
+  const al=s.activeLines||defaultActiveLines();
   // Attendance: perfect month = +bonus, any late = −bonus
-  const attBonus=(lateN===0&&lateF===0&&entryWks.size>0)?s.attendance:(entryWks.size>0?-s.attendance:0);
+  const attBonus=al.attendance?(lateN===0&&lateF===0&&entryWks.size>0)?s.attendance:(entryWks.size>0?-s.attendance:0):0;
   // Van: pass weeks = +van, fail weeks = −van (applies immediately)
-  const vanBon=(cleanVan*s.van)-(failVan*s.van);
+  const vanBon=al.van?(cleanVan*s.van)-(failVan*s.van):0;
   // On-time: clean weeks = +ontime, late weeks = −ontime (applies immediately)
-  const otBon=(otWks*s.ontime)-(lateWkCount*s.ontime);
-  const hapBon=happyWks*s.happy,ncBon=noCbWks*s.nocallback;
+  const otBon=al.ontime?(otWks*s.ontime)-(lateWkCount*s.ontime):0;
+  const hapBon=al.happy?happyWks*s.happy:0;
+  const ncBon=al.nocallback?noCbWks*s.nocallback:0;
   // TIERED PROTECTED earnings
   const upsellBonus=calcTieredUpsell(upsellSales,s);
   const revBon=calcTieredReviews(gr);
-  const ckPen=missed*s.checklist,laPen=lateN*s.late,lfPen=lateF*(s.lf||50),coPen=compN*s.complaint,cbPen=cbN*s.callback,brPen=br*s.badrev;
+  const ckPen=al.checklist?missed*s.checklist:0;
+  const laPen=al.late?lateN*s.late:0;
+  const lfPen=al.late?lateF*(s.lf||50):0;
+  const coPen=compN*s.complaint;
+  const cbPen=al.callback?cbN*s.callback:0;
+  const brPen=al.badrev?br*s.badrev:0;
   const qualityBase=s.start-ckPen-laPen-lfPen-coPen-cbPen-brPen-customDedTotal+attBonus+vanBon+hapBon+ncBon+otBon;
   const qualityTotal=Math.max(0,qualityBase);const total=upsellBonus+revBon+qualityTotal;
   return{upsellSales,upsellBonus,revBon,missed,ckPen,lateN,lateF,laPen,lfPen,compN,coPen,cbN,cbPen,gr,br,brPen,customDedTotal,deds,attBonus,vanBon,hapBon,ncBon,otBon,cleanVan,failVan,noCbWks,otWks,lateWkCount,happyWks,qualityTotal,total,s,emp,doneSlots:done,entryWks};
@@ -1139,15 +1169,19 @@ function calcWeek(empId,monthKey,weekSlot){
   let upsellSales=0,missed=0,lateN=0,lateF=0,compN=0,cbN=0,gr=0,br=0;
   let vanPass=false,vanFail=false,hasCallback=false,hasLate=false,hasComp=false;
   data.forEach(e=>{upsellSales+=e.u||0;missed+=e.c||0;lateN+=e.la||0;lateF+=e.lf||0;compN+=e.co||0;cbN+=e.cb||0;gr+=e.gr||0;br+=e.br||0;if(e.van==='pass')vanPass=true;if(e.van==='fail')vanFail=true;if(e.cb)hasCallback=true;if(e.la||e.lf)hasLate=true;if(e.co)hasComp=true;});
-  const done=completedWeekSlots(monthKey);const wkDone=done.includes(weekSlot);
-  // Bonuses and penalties apply as soon as entries are logged — no waiting for week to close
+  const al=s.activeLines||defaultActiveLines();
   const hasEntries=data.length>0;
-  const vanBon=hasEntries&&vanPass&&!vanFail?s.van:(hasEntries&&vanFail?-s.van:0);
-  const ncBon=hasEntries&&!hasCallback?s.nocallback:0;
-  const otBon=hasEntries?(!hasLate?s.ontime:-s.ontime):0;
-  const hapBon=hasEntries&&!hasCallback&&!hasComp?s.happy:0;
+  const vanBon=al.van?(hasEntries&&vanPass&&!vanFail?s.van:(hasEntries&&vanFail?-s.van:0)):0;
+  const ncBon=al.nocallback?(hasEntries&&!hasCallback?s.nocallback:0):0;
+  const otBon=al.ontime?(hasEntries?(!hasLate?s.ontime:-s.ontime):0):0;
+  const hapBon=al.happy?(hasEntries&&!hasCallback&&!hasComp?s.happy:0):0;
   const upsellBonus=calcTieredUpsell(upsellSales,s);const revBon=calcTieredReviews(gr);
-  const ckPen=missed*s.checklist,laPen=lateN*s.late,lfPen=lateF*(s.lf||50),coPen=compN*s.complaint,cbPen=cbN*s.callback,brPen=br*s.badrev;
+  const ckPen=al.checklist?missed*s.checklist:0;
+  const laPen=al.late?lateN*s.late:0;
+  const lfPen=al.late?lateF*(s.lf||50):0;
+  const coPen=compN*s.complaint;
+  const cbPen=al.callback?cbN*s.callback:0;
+  const brPen=al.badrev?br*s.badrev:0;
   const qualityBase=s.start/4-ckPen-laPen-lfPen-coPen-cbPen-brPen-weekDedTotal+vanBon+hapBon+ncBon+otBon;
   const qualityTotal=Math.max(0,qualityBase);const total=upsellBonus+revBon+qualityTotal;
   return{upsellSales,upsellBonus,revBon,missed,ckPen,lateN,lateF,laPen,lfPen,compN,coPen,cbN,cbPen,gr,br,brPen,weekDedTotal,vanBon,hapBon,ncBon,otBon,qualityTotal,total,s,emp,wkDone,weekSlot,hasEntries:data.length>0};
@@ -1157,7 +1191,7 @@ function calcWeek(empId,monthKey,weekSlot){
 function getMonths(){const s=new Set([curMk()]);allData().forEach(e=>s.add(mk(e.date)));getDeds().forEach(d=>s.add(mk(d.date)));return[...s].sort().reverse();}
 function populateSels(){
   const months=getMonths();
-  ['sum-month-sel','lb-month-sel','email-month-sel','email-monthly-month-sel','goal-month-sel'].forEach(id=>{
+  ['sum-month-sel','email-month-sel','email-monthly-month-sel','goal-month-sel'].forEach(id=>{
     const sel=document.getElementById(id);if(!sel)return;
     const cur=sel.value||curMk();
     sel.innerHTML=months.map(m=>`<option value="${m}"${m===cur?' selected':''}>${fmLabel(m)}</option>`).join('');
@@ -1272,22 +1306,22 @@ function renderSummary(){
       <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Reviews</div><div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:500;color:var(--blue)">${fm(c.revBon)}</div></div>
     </div>
   </div>`;
+  const al=c.s.activeLines||defaultActiveLines();
   const rows=[
     {t:'row',l:'Starting bonus',v:fm(c.s.start),cls:''},
     {t:'sec',l:'Quality Deductions'},
-    {t:'row',l:'Checklist penalty ('+c.missed+' missed)',v:c.ckPen>0?'− '+fm(c.ckPen):'$0.00',cls:c.ckPen>0?'red':'green'},
-    {t:'row',l:'Late arrival penalty ('+c.lateN+')',v:c.laPen>0?'− '+fm(c.laPen):'$0.00',cls:c.laPen>0?'red':'green'},
-    {t:'row',l:'Late finish penalty ('+c.lateF+')',v:c.lfPen>0?'− '+fm(c.lfPen):'$0.00',cls:c.lfPen>0?'red':'green'},
+    ...(al.checklist?[{t:'row',l:'Checklist penalty ('+c.missed+' missed)',v:c.ckPen>0?'− '+fm(c.ckPen):'$0.00',cls:c.ckPen>0?'red':'green'}]:[]),
+    ...(al.late?[{t:'row',l:'Late arrival penalty ('+c.lateN+')',v:c.laPen>0?'− '+fm(c.laPen):'$0.00',cls:c.laPen>0?'red':'green'},{t:'row',l:'Late finish penalty ('+c.lateF+')',v:c.lfPen>0?'− '+fm(c.lfPen):'$0.00',cls:c.lfPen>0?'red':'green'}]:[]),
     {t:'row',l:'Complaint penalty ('+c.compN+')',v:c.coPen>0?'− '+fm(c.coPen):'$0.00',cls:c.coPen>0?'red':'green'},
-    {t:'row',l:'Callback penalty ('+c.cbN+')',v:c.cbPen>0?'− '+fm(c.cbPen):'$0.00',cls:c.cbPen>0?'red':'green'},
-    {t:'row',l:'Bad review penalty ('+c.br+')',v:c.brPen>0?'− '+fm(c.brPen):'$0.00',cls:c.brPen>0?'red':'green'},
+    ...(al.callback?[{t:'row',l:'Callback penalty ('+c.cbN+')',v:c.cbPen>0?'− '+fm(c.cbPen):'$0.00',cls:c.cbPen>0?'red':'green'}]:[]),
+    ...(al.badrev?[{t:'row',l:'Bad review penalty ('+c.br+')',v:c.brPen>0?'− '+fm(c.brPen):'$0.00',cls:c.brPen>0?'red':'green'}]:[]),
     ...(c.deds.length?[{t:'sec',l:'Custom Deductions'},...c.deds.map(d=>({t:'row',l:d.reason+' ('+d.date+')',v:'− '+fm(d.amount),cls:'red'}))]:[]),
-    {t:'sec',l:'Weekly Bonuses ('+c.doneSlots.length+' of 4 weeks completed)'},
-    {t:'row',l:'Perfect attendance (month)',v:c.attBonus>0?'+ '+fm(c.attBonus):c.attBonus<0?'− '+fm(-c.attBonus):'Not applicable',cls:c.attBonus>0?'green':c.attBonus<0?'red':''},
-    {t:'row',l:'Van clean ('+c.cleanVan+' pass, '+c.failVan+' fail)',v:(c.vanBon>=0?'+ ':'− ')+fm(Math.abs(c.vanBon)),cls:c.vanBon>=0?'green':'red'},
-    {t:'row',l:'Happy customer ('+c.happyWks+' weeks × '+fm(c.s.happy)+')',v:'+ '+fm(c.hapBon),cls:c.hapBon>0?'green':''},
-    {t:'row',l:'No callback ('+c.noCbWks+' weeks × '+fm(c.s.nocallback)+')',v:'+ '+fm(c.ncBon),cls:c.ncBon>0?'green':''},
-    {t:'row',l:'On-time ('+c.otWks+' on, '+c.lateWkCount+' late)',v:(c.otBon>=0?'+ ':'− ')+fm(Math.abs(c.otBon)),cls:c.otBon>=0?'green':'red'},
+    {t:'sec',l:'Weekly Bonuses'},
+    ...(al.attendance?[{t:'row',l:'Perfect attendance (month)',v:c.attBonus>0?'+ '+fm(c.attBonus):c.attBonus<0?'− '+fm(-c.attBonus):'Not applicable',cls:c.attBonus>0?'green':c.attBonus<0?'red':''}]:[]),
+    ...(al.van?[{t:'row',l:'Van clean ('+c.cleanVan+' pass, '+c.failVan+' fail)',v:(c.vanBon>=0?'+ ':'− ')+fm(Math.abs(c.vanBon)),cls:c.vanBon>=0?'green':'red'}]:[]),
+    ...(al.happy?[{t:'row',l:'Happy customer ('+c.happyWks+' weeks × '+fm(c.s.happy)+')',v:'+ '+fm(c.hapBon),cls:c.hapBon>0?'green':''}]:[]),
+    ...(al.nocallback?[{t:'row',l:'No callback ('+c.noCbWks+' weeks × '+fm(c.s.nocallback)+')',v:'+ '+fm(c.ncBon),cls:c.ncBon>0?'green':''}]:[]),
+    ...(al.ontime?[{t:'row',l:'On-time ('+c.otWks+' on, '+c.lateWkCount+' late)',v:(c.otBon>=0?'+ ':'− ')+fm(Math.abs(c.otBon)),cls:c.otBon>=0?'green':'red'}]:[]),
     {t:'sec',l:'Totals'},
     {t:'row',l:'Quality bonus subtotal',v:fm(c.qualityTotal),cls:c.qualityTotal>0?'green':'red'},
     {t:'row',l:'Upsell commission — protected ('+Math.round(c.s.commission*100)+'%→'+Math.round((c.s.commissionTier2||0.40)*100)+'% tiered)',v:'+ '+fm(c.upsellBonus),cls:'c-blue'},
@@ -1640,7 +1674,7 @@ function openAddAcc(){
   const g=globalCfg();const rmap={start:'er-start',checklist:'er-ck',late:'er-late',lf:'er-lf',complaint:'er-comp',callback:'er-cb',badrev:'er-badrev',goodrev:'er-goodrev',commission:'er-comm',commissionTier2:'er-comm2',attendance:'er-att',van:'er-van',happy:'er-happy',nocallback:'er-ncb',ontime:'er-ot'};
   Object.entries(rmap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=g[k]||defaultRates()[k];});
   document.getElementById('emp-rates-wrap').style.display='block';
-  buildColorPicker(COLORS2[0]);buildPermGrid('tech',null);
+  buildColorPicker(COLORS2[0]);buildPermGrid('tech',null);buildBonusToggleGrid(null);
   document.getElementById('acc-modal').classList.add('open');
 }
 function openEditAcc(id){
@@ -1651,6 +1685,7 @@ function openEditAcc(id){
   Object.entries(rmap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=acc.rates?acc.rates[k]||0:0;});
   document.getElementById('emp-rates-wrap').style.display=acc.type==='tech'?'block':'none';
   buildColorPicker(acc.color);buildPermGrid(acc.type,acc.perms||{});
+  if(acc.type==='tech') buildBonusToggleGrid(acc.rates?.activeLines||null);
   document.getElementById('acc-modal').classList.add('open');
 }
 function saveAccount(){
@@ -1658,7 +1693,7 @@ function saveAccount(){
   const pin=document.getElementById('acc-pin').value.trim();if(pin.length!==4||isNaN(pin)){showToast('PIN must be exactly 4 digits');return;}
   const type=document.getElementById('acc-type').value;
   const email=document.getElementById('acc-email').value.trim().toLowerCase();
-  const rates=type==='tech'?{start:+document.getElementById('er-start').value||100,checklist:+document.getElementById('er-ck').value||10,late:+document.getElementById('er-late').value||50,lf:+document.getElementById('er-lf').value||50,complaint:+document.getElementById('er-comp').value||25,callback:+document.getElementById('er-cb').value||50,badrev:+document.getElementById('er-badrev').value||100,goodrev:+document.getElementById('er-goodrev').value||7.5,commission:+document.getElementById('er-comm').value||0.30,commissionTier2:+document.getElementById('er-comm2').value||0.40,attendance:+document.getElementById('er-att').value||50,van:+document.getElementById('er-van').value||20,happy:+document.getElementById('er-happy').value||10,nocallback:+document.getElementById('er-ncb').value||50,ontime:+document.getElementById('er-ot').value||50}:defaultRates();
+  const rates=type==='tech'?{start:+document.getElementById('er-start').value||100,checklist:+document.getElementById('er-ck').value||10,late:+document.getElementById('er-late').value||50,lf:+document.getElementById('er-lf').value||50,complaint:+document.getElementById('er-comp').value||25,callback:+document.getElementById('er-cb').value||50,badrev:+document.getElementById('er-badrev').value||100,goodrev:+document.getElementById('er-goodrev').value||7.5,commission:+document.getElementById('er-comm').value||0.30,commissionTier2:+document.getElementById('er-comm2').value||0.40,attendance:+document.getElementById('er-att').value||50,van:+document.getElementById('er-van').value||20,happy:+document.getElementById('er-happy').value||10,nocallback:+document.getElementById('er-ncb').value||50,ontime:+document.getElementById('er-ot').value||50,activeLines:getBonusToggles()}:defaultRates();
   const perms=getPermOverrides();
   if(editAccId){
     const idx=_accs.findIndex(a=>a.id===editAccId);
@@ -2122,7 +2157,7 @@ function copyGoalText(txt){
 }
 
 // ── MOBILE NAV ──
-const MOB_TAB_MAP={entry:'mtab-entry',summary:'mtab-summary',goals:'mtab-goals',leaderboard:'mtab-leaderboard'};
+const MOB_TAB_MAP={entry:'mtab-entry',summary:'mtab-summary',goals:'mtab-goals'};
 const MOB_MORE=['email','log','deductions','accounts','audit','cfg'];
 function isMobile(){return window.innerWidth<=768;}
 function mobGo(tab,btn){
@@ -2180,7 +2215,7 @@ function applyMobPermissions(){
 }
 
 // ── RENDER ALL ──
-function renderAll(){buildToggles();renderEM();renderWkStrip();renderSummary();renderLeaderboard();renderLog();renderEmail();renderMonthlyEmail();renderDedList();renderAccList();renderAudit();renderGoals();}
+function renderAll(){buildToggles();renderEM();renderWkStrip();renderSummary();renderLog();renderEmail();renderMonthlyEmail();renderDedList();renderAccList();renderAudit();renderGoals();}
 
 // ── INIT ──
 loadTheme();
