@@ -1144,8 +1144,11 @@ function calc(empId,monthKey){
   const otBon=al.ontime?(otWks*s.ontime)-(lateWkCount*s.ontime):0;
   const hapBon=al.happy?happyWks*s.happy:0;
   const ncBon=al.nocallback?noCbWks*s.nocallback:0;
-  // TIERED PROTECTED earnings
-  const upsellBonus=calcTieredUpsell(upsellSales,s);
+  // TIERED UPSELL — resets every week slot, calculated independently per week then summed
+  const upsellBonus=[1,2,3,4].reduce((sum,w)=>{
+    const wkSales=data.filter(e=>(e.ws||1)===w).reduce((s,e)=>s+(e.u||0),0);
+    return sum+calcTieredUpsell(wkSales,s);
+  },0);
   const revBon=calcTieredReviews(gr);
   const ckPen=al.checklist?missed*s.checklist:0;
   const laPen=al.late?lateN*s.late:0;
@@ -1324,7 +1327,7 @@ function renderSummary(){
     ...(al.ontime?[{t:'row',l:'On-time ('+c.otWks+' on, '+c.lateWkCount+' late)',v:(c.otBon>=0?'+ ':'− ')+fm(Math.abs(c.otBon)),cls:c.otBon>=0?'green':'red'}]:[]),
     {t:'sec',l:'Totals'},
     {t:'row',l:'Quality bonus subtotal',v:fm(c.qualityTotal),cls:c.qualityTotal>0?'green':'red'},
-    {t:'row',l:'Upsell commission — protected ('+Math.round(c.s.commission*100)+'%→'+Math.round((c.s.commissionTier2||0.40)*100)+'% tiered)',v:'+ '+fm(c.upsellBonus),cls:'c-blue'},
+    {t:'row',l:'Upsell commission — protected ('+Math.round(c.s.commission*100)+'%→'+Math.round((c.s.commissionTier2||0.40)*100)+'% tiered, resets weekly)',v:'+ '+fm(c.upsellBonus),cls:'c-blue'},
     {t:'row',l:'Review bonus — protected ('+reviewTierDesc(c.gr)+')',v:'+ '+fm(c.revBon),cls:'c-blue'},
     {t:'total',l:'Total Payout This Month',v:fm(c.total),cls:c.total>=c.s.start?'green':'red'}
   ];
