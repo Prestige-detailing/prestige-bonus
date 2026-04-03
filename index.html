@@ -388,6 +388,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
       <div class="pin-numpad" id="pin-numpad"></div>
       <div style="color:var(--red);font-size:13px;min-height:20px;margin-top:10px" id="pin-err"></div>
       <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:12px" onclick="backToWho()">← Back</button>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px;color:var(--blue);border-color:var(--blue)" onclick="startPinReset()">Forgot PIN? Send reset code</button>
+    </div>
+    <div id="pin-otp" style="display:none">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:14px" id="otp-sub">A 6-digit code was sent to your email.</div>
+      <div class="fi" style="margin-bottom:10px"><input type="number" id="otp-code" maxlength="6" placeholder="Enter 6-digit code" style="text-align:center;font-size:20px;letter-spacing:.2em"></div>
+      <div style="color:var(--red);font-size:13px;min-height:18px;margin-bottom:8px" id="otp-err"></div>
+      <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:0" onclick="verifyOTP()">Verify Code</button>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px" onclick="backToWho()">← Back</button>
     </div>
     <div id="pin-newset" style="display:none">
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">First login — set your personal PIN:</div>
@@ -789,6 +797,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
       <div class="fi"><label>Full Name</label><input type="text" id="acc-name"></div>
       <div class="fi"><label>Job Title</label><input type="text" id="acc-role-title" placeholder="e.g. Lead Technician"></div>
     </div>
+    <div class="fi" style="margin-top:10px"><label>Email Address — used for PIN reset</label><input type="email" id="acc-email" placeholder="e.g. luis@gmail.com"></div>
     <div class="fg2" style="margin-top:10px">
       <div class="fi"><label>Account Type</label>
         <select id="acc-type" onchange="onTypeChange()">
@@ -985,7 +994,7 @@ function saveAccs(a){
 function saveOneAcc(acc){
   const idx=_accs.findIndex(a=>a.id===acc.id);
   if(idx>-1) _accs[idx]=acc;
-  db.update('pd_accounts',acc.id,{name:acc.name,roletitle:acc.roletitle,type:acc.type,color:acc.color,pin:acc.pin,pinset:acc.pinset,perms:acc.perms,rates:acc.rates})
+  db.update('pd_accounts',acc.id,{name:acc.name,roletitle:acc.roletitle,type:acc.type,color:acc.color,pin:acc.pin,pinset:acc.pinset,email:acc.email||'',perms:acc.perms,rates:acc.rates})
     .then(r=>console.log('saveOneAcc:',acc.id,'pinset:',acc.pinset,'result:',r));
 }
 
@@ -1616,7 +1625,7 @@ function pickColor(c,el){selColor=c;document.querySelectorAll('#acc-color-picker
 function openAddAcc(){
   if(!currentUser||!getPerms(currentUser).accounts){showToast('Owner access required');return;}
   editAccId=null;document.getElementById('acc-modal-title').textContent='Add Account';document.getElementById('acc-save-btn').textContent='Add Account';
-  document.getElementById('acc-name').value='';document.getElementById('acc-role-title').value='';document.getElementById('acc-pin').value='';document.getElementById('acc-type').value='tech';
+  document.getElementById('acc-name').value='';document.getElementById('acc-role-title').value='';document.getElementById('acc-pin').value='';document.getElementById('acc-type').value='tech';document.getElementById('acc-email').value='';
   const g=globalCfg();const rmap={start:'er-start',checklist:'er-ck',late:'er-late',lf:'er-lf',complaint:'er-comp',callback:'er-cb',badrev:'er-badrev',goodrev:'er-goodrev',commission:'er-comm',commissionTier2:'er-comm2',attendance:'er-att',van:'er-van',happy:'er-happy',nocallback:'er-ncb',ontime:'er-ot'};
   Object.entries(rmap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=g[k]||defaultRates()[k];});
   document.getElementById('emp-rates-wrap').style.display='block';
@@ -1626,7 +1635,7 @@ function openAddAcc(){
 function openEditAcc(id){
   const acc=getAccs().find(a=>a.id===id);if(!acc)return;editAccId=id;
   document.getElementById('acc-modal-title').textContent='Edit — '+acc.name;document.getElementById('acc-save-btn').textContent='Save Changes';
-  document.getElementById('acc-name').value=acc.name;document.getElementById('acc-role-title').value=acc.roletitle;document.getElementById('acc-pin').value=acc.pin||'';document.getElementById('acc-type').value=acc.type;
+  document.getElementById('acc-name').value=acc.name;document.getElementById('acc-role-title').value=acc.roletitle;document.getElementById('acc-pin').value=acc.pin||'';document.getElementById('acc-type').value=acc.type;document.getElementById('acc-email').value=acc.email||'';
   const rmap={start:'er-start',checklist:'er-ck',late:'er-late',lf:'er-lf',complaint:'er-comp',callback:'er-cb',badrev:'er-badrev',goodrev:'er-goodrev',commission:'er-comm',commissionTier2:'er-comm2',attendance:'er-att',van:'er-van',happy:'er-happy',nocallback:'er-ncb',ontime:'er-ot'};
   Object.entries(rmap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=acc.rates?acc.rates[k]||0:0;});
   document.getElementById('emp-rates-wrap').style.display=acc.type==='tech'?'block':'none';
@@ -1637,17 +1646,18 @@ function saveAccount(){
   const name=document.getElementById('acc-name').value.trim();if(!name){showToast('Enter a name');return;}
   const pin=document.getElementById('acc-pin').value.trim();if(pin.length!==4||isNaN(pin)){showToast('PIN must be exactly 4 digits');return;}
   const type=document.getElementById('acc-type').value;
+  const email=document.getElementById('acc-email').value.trim().toLowerCase();
   const rates=type==='tech'?{start:+document.getElementById('er-start').value||100,checklist:+document.getElementById('er-ck').value||10,late:+document.getElementById('er-late').value||50,lf:+document.getElementById('er-lf').value||50,complaint:+document.getElementById('er-comp').value||25,callback:+document.getElementById('er-cb').value||50,badrev:+document.getElementById('er-badrev').value||100,goodrev:+document.getElementById('er-goodrev').value||7.5,commission:+document.getElementById('er-comm').value||0.30,commissionTier2:+document.getElementById('er-comm2').value||0.40,attendance:+document.getElementById('er-att').value||50,van:+document.getElementById('er-van').value||20,happy:+document.getElementById('er-happy').value||10,nocallback:+document.getElementById('er-ncb').value||50,ontime:+document.getElementById('er-ot').value||50}:defaultRates();
   const perms=getPermOverrides();
   if(editAccId){
     const idx=_accs.findIndex(a=>a.id===editAccId);
     if(idx>-1){
-      _accs[idx]={..._accs[idx],name,roletitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinset:true,perms,rates};
+      _accs[idx]={..._accs[idx],name,roletitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinset:true,email,perms,rates};
       saveOneAcc(_accs[idx]);
     }
     addAudit('Account updated',name);showToast(name+' updated');
   } else {
-    const newAcc={id:uid(),name,roletitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinset:true,perms,rates};
+    const newAcc={id:uid(),name,roletitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinset:true,email,perms,rates};
     _accs.push(newAcc);
     saveOneAcc(newAcc);
     addAudit('Account created',name+' ('+type+')');showToast(name+' added');
@@ -1659,7 +1669,7 @@ function deleteAcc(id){
   if(!confirm('Remove this account?'))return;
   const name=_accs.find(a=>a.id===id)?.name||id;
   _accs=_accs.filter(a=>a.id!==id);
-  sbFetch('pd_accounts?id=eq.'+id,{method:'DELETE'});
+  db.delete('pd_accounts',id);
   addAudit('Account removed',name);buildToggles();renderAccList();populateSels();renderAll();showToast('Removed');
 }
 
@@ -1718,11 +1728,76 @@ function selectUser(id){
     renderPinDots();buildNumpad();
   }
 }
+// ── PIN RESET VIA EMAIL OTP ──
+let _otpTarget=null;
+async function startPinReset(){
+  if(!pinTarget){showToast('Select your name first');return;}
+  const acc=pinTarget;
+  if(!acc.email){
+    document.getElementById('pin-err').textContent='No email on file — ask your owner to add one in Accounts.';
+    return;
+  }
+  document.getElementById('pin-err').textContent='';
+  showToast('Sending code to '+acc.email+'...');
+  try {
+    const res=await fetch(SUPA_URL+'/auth/v1/otp',{
+      method:'POST',
+      headers:{'apikey':SUPA_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({email:acc.email,create_user:true})
+    });
+    const data=await res.json();
+    if(!res.ok){
+      console.error('OTP send error:',data);
+      document.getElementById('pin-err').textContent='Could not send code: '+(data.message||'unknown error');
+      return;
+    }
+    _otpTarget=acc;
+    document.getElementById('pin-entry').style.display='none';
+    document.getElementById('pin-otp').style.display='block';
+    document.getElementById('otp-sub').textContent='A 6-digit code was sent to '+acc.email;
+    document.getElementById('otp-code').value='';
+    document.getElementById('otp-err').textContent='';
+    showToast('Code sent — check your email');
+  } catch(e){
+    document.getElementById('pin-err').textContent='Network error — try again';
+  }
+}
+async function verifyOTP(){
+  if(!_otpTarget)return;
+  const token=document.getElementById('otp-code').value.trim();
+  if(token.length!==6){document.getElementById('otp-err').textContent='Enter the 6-digit code from your email';return;}
+  document.getElementById('otp-err').textContent='Verifying...';
+  try {
+    const res=await fetch(SUPA_URL+'/auth/v1/verify',{
+      method:'POST',
+      headers:{'apikey':SUPA_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({email:_otpTarget.email,token,type:'email'})
+    });
+    const data=await res.json();
+    if(!res.ok||!data.user){
+      document.getElementById('otp-err').textContent='Invalid or expired code — try again';
+      return;
+    }
+    // Code verified — prompt new PIN
+    document.getElementById('otp-err').textContent='';
+    document.getElementById('pin-otp').style.display='none';
+    document.getElementById('pin-title').textContent='Set New PIN — '+_otpTarget.name.split(' ')[0];
+    document.getElementById('pin-sub').textContent='Code verified. Choose a new 4-digit PIN.';
+    document.getElementById('pin-newset').style.display='block';
+    pinTarget=_otpTarget;
+  } catch(e){
+    document.getElementById('otp-err').textContent='Network error — try again';
+  }
+}
+
 function backToWho(){
-  pinBuffer='';pinTarget=null;
+  pinBuffer='';pinTarget=null;_otpTarget=null;
   document.getElementById('emp-sel').style.display='flex';document.getElementById('emp-sel').style.flexDirection='column';
-  document.getElementById('pin-entry').style.display='none';document.getElementById('pin-newset').style.display='none';
-  document.getElementById('pin-title').textContent='Who are you?';document.getElementById('pin-sub').textContent='Select your name to continue';document.getElementById('pin-err').textContent='';
+  document.getElementById('pin-entry').style.display='none';
+  document.getElementById('pin-newset').style.display='none';
+  document.getElementById('pin-otp').style.display='none';
+  document.getElementById('pin-title').textContent='Who are you?';document.getElementById('pin-sub').textContent='Select your name to continue';
+  const err=document.getElementById('pin-err');if(err)err.textContent='';
 }
 function renderPinDots(){document.getElementById('pin-dots').innerHTML=[0,1,2,3].map(i=>`<div class="pin-dot${i<pinBuffer.length?' filled':''}"></div>`).join('');}
 function buildNumpad(){document.getElementById('pin-numpad').innerHTML=[1,2,3,4,5,6,7,8,9,'','0','⌫'].map(k=>k===''?'<div></div>':`<button class="pin-key" onclick="pinPress('${k}')">${k}</button>`).join('');}
