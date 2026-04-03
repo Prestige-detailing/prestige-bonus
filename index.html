@@ -1104,17 +1104,19 @@ function calc(empId,monthKey){
   const vanPassWks=new Set(),vanFailWks=new Set(),cbWks=new Set(),lateWks=new Set(),compWks=new Set(),entryWks=new Set();
   data.forEach(e=>{upsellSales+=e.u||0;missed+=e.c||0;lateN+=e.la||0;lateF+=e.lf||0;compN+=e.co||0;cbN+=e.cb||0;gr+=e.gr||0;br+=e.br||0;const w=e.ws||1;entryWks.add(w);if(e.van==='pass')vanPassWks.add(w);else vanFailWks.add(w);if(e.cb)cbWks.add(w);if(e.la||e.lf)lateWks.add(w);if(e.co)compWks.add(w);});
   const done=completedWeekSlots(monthKey);
-  const failVan=done.filter(w=>vanFailWks.has(w)).length;
-  const cleanVan=done.filter(w=>vanPassWks.has(w)&&!vanFailWks.has(w)).length;
-  const noCbWks=done.filter(w=>entryWks.has(w)&&!cbWks.has(w)).length;
-  const lateWkCount=done.filter(w=>entryWks.has(w)&&lateWks.has(w)).length;
-  const otWks=done.filter(w=>entryWks.has(w)&&!lateWks.has(w)).length;
-  const happyWks=done.filter(w=>entryWks.has(w)&&!cbWks.has(w)&&!compWks.has(w)).length;
-  // Attendance: perfect = +bonus, any late = −bonus
+  // Use all weeks with entries — real time, no waiting for Friday
+  const allEntryWks=[...entryWks];
+  const failVan=allEntryWks.filter(w=>vanFailWks.has(w)).length;
+  const cleanVan=allEntryWks.filter(w=>vanPassWks.has(w)&&!vanFailWks.has(w)).length;
+  const noCbWks=allEntryWks.filter(w=>!cbWks.has(w)).length;
+  const lateWkCount=allEntryWks.filter(w=>lateWks.has(w)).length;
+  const otWks=allEntryWks.filter(w=>!lateWks.has(w)).length;
+  const happyWks=allEntryWks.filter(w=>!cbWks.has(w)&&!compWks.has(w)).length;
+  // Attendance: perfect month = +bonus, any late = −bonus
   const attBonus=(lateN===0&&lateF===0&&entryWks.size>0)?s.attendance:(entryWks.size>0?-s.attendance:0);
-  // Van: pass weeks = +van, fail weeks = −van
+  // Van: pass weeks = +van, fail weeks = −van (applies immediately)
   const vanBon=(cleanVan*s.van)-(failVan*s.van);
-  // On-time: on-time weeks = +ontime, late weeks = −ontime
+  // On-time: clean weeks = +ontime, late weeks = −ontime (applies immediately)
   const otBon=(otWks*s.ontime)-(lateWkCount*s.ontime);
   const hapBon=happyWks*s.happy,ncBon=noCbWks*s.nocallback;
   // TIERED PROTECTED earnings
@@ -1138,10 +1140,12 @@ function calcWeek(empId,monthKey,weekSlot){
   let vanPass=false,vanFail=false,hasCallback=false,hasLate=false,hasComp=false;
   data.forEach(e=>{upsellSales+=e.u||0;missed+=e.c||0;lateN+=e.la||0;lateF+=e.lf||0;compN+=e.co||0;cbN+=e.cb||0;gr+=e.gr||0;br+=e.br||0;if(e.van==='pass')vanPass=true;if(e.van==='fail')vanFail=true;if(e.cb)hasCallback=true;if(e.la||e.lf)hasLate=true;if(e.co)hasComp=true;});
   const done=completedWeekSlots(monthKey);const wkDone=done.includes(weekSlot);
-  const vanBon=wkDone&&vanPass&&!vanFail?s.van:(wkDone&&vanFail?-s.van:0);
-  const ncBon=wkDone&&data.length&&!hasCallback?s.nocallback:0;
-  const otBon=wkDone&&data.length?(!hasLate?s.ontime:-s.ontime):0;
-  const hapBon=wkDone&&data.length&&!hasCallback&&!hasComp?s.happy:0;
+  // Bonuses and penalties apply as soon as entries are logged — no waiting for week to close
+  const hasEntries=data.length>0;
+  const vanBon=hasEntries&&vanPass&&!vanFail?s.van:(hasEntries&&vanFail?-s.van:0);
+  const ncBon=hasEntries&&!hasCallback?s.nocallback:0;
+  const otBon=hasEntries?(!hasLate?s.ontime:-s.ontime):0;
+  const hapBon=hasEntries&&!hasCallback&&!hasComp?s.happy:0;
   const upsellBonus=calcTieredUpsell(upsellSales,s);const revBon=calcTieredReviews(gr);
   const ckPen=missed*s.checklist,laPen=lateN*s.late,lfPen=lateF*(s.lf||50),coPen=compN*s.complaint,cbPen=cbN*s.callback,brPen=br*s.badrev;
   const qualityBase=s.start/4-ckPen-laPen-lfPen-coPen-cbPen-brPen-weekDedTotal+vanBon+hapBon+ncBon+otBon;
