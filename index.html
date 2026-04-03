@@ -1104,19 +1104,26 @@ function calc(empId,monthKey){
   const vanPassWks=new Set(),vanFailWks=new Set(),cbWks=new Set(),lateWks=new Set(),compWks=new Set(),entryWks=new Set();
   data.forEach(e=>{upsellSales+=e.u||0;missed+=e.c||0;lateN+=e.la||0;lateF+=e.lf||0;compN+=e.co||0;cbN+=e.cb||0;gr+=e.gr||0;br+=e.br||0;const w=e.ws||1;entryWks.add(w);if(e.van==='pass')vanPassWks.add(w);else vanFailWks.add(w);if(e.cb)cbWks.add(w);if(e.la||e.lf)lateWks.add(w);if(e.co)compWks.add(w);});
   const done=completedWeekSlots(monthKey);
+  const failVan=done.filter(w=>vanFailWks.has(w)).length;
   const cleanVan=done.filter(w=>vanPassWks.has(w)&&!vanFailWks.has(w)).length;
   const noCbWks=done.filter(w=>entryWks.has(w)&&!cbWks.has(w)).length;
+  const lateWkCount=done.filter(w=>entryWks.has(w)&&lateWks.has(w)).length;
   const otWks=done.filter(w=>entryWks.has(w)&&!lateWks.has(w)).length;
   const happyWks=done.filter(w=>entryWks.has(w)&&!cbWks.has(w)&&!compWks.has(w)).length;
-  const attBonus=(lateN===0&&lateF===0&&entryWks.size>0)?s.attendance:0;
+  // Attendance: perfect = +bonus, any late = −bonus
+  const attBonus=(lateN===0&&lateF===0&&entryWks.size>0)?s.attendance:(entryWks.size>0?-s.attendance:0);
+  // Van: pass weeks = +van, fail weeks = −van
+  const vanBon=(cleanVan*s.van)-(failVan*s.van);
+  // On-time: on-time weeks = +ontime, late weeks = −ontime
+  const otBon=(otWks*s.ontime)-(lateWkCount*s.ontime);
+  const hapBon=happyWks*s.happy,ncBon=noCbWks*s.nocallback;
   // TIERED PROTECTED earnings
   const upsellBonus=calcTieredUpsell(upsellSales,s);
   const revBon=calcTieredReviews(gr);
   const ckPen=missed*s.checklist,laPen=lateN*s.late,lfPen=lateF*(s.lf||50),coPen=compN*s.complaint,cbPen=cbN*s.callback,brPen=br*s.badrev;
-  const vanBon=cleanVan*s.van,hapBon=happyWks*s.happy,ncBon=noCbWks*s.nocallback,otBon=otWks*s.ontime;
   const qualityBase=s.start-ckPen-laPen-lfPen-coPen-cbPen-brPen-customDedTotal+attBonus+vanBon+hapBon+ncBon+otBon;
   const qualityTotal=Math.max(0,qualityBase);const total=upsellBonus+revBon+qualityTotal;
-  return{upsellSales,upsellBonus,revBon,missed,ckPen,lateN,lateF,laPen,lfPen,compN,coPen,cbN,cbPen,gr,br,brPen,customDedTotal,deds,attBonus,vanBon,hapBon,ncBon,otBon,cleanVan,noCbWks,otWks,happyWks,qualityTotal,total,s,emp,doneSlots:done,entryWks};
+  return{upsellSales,upsellBonus,revBon,missed,ckPen,lateN,lateF,laPen,lfPen,compN,coPen,cbN,cbPen,gr,br,brPen,customDedTotal,deds,attBonus,vanBon,hapBon,ncBon,otBon,cleanVan,failVan,noCbWks,otWks,lateWkCount,happyWks,qualityTotal,total,s,emp,doneSlots:done,entryWks};
 }
 
 // ── CALC WEEKLY (isolated to one week slot) ──
@@ -1131,9 +1138,9 @@ function calcWeek(empId,monthKey,weekSlot){
   let vanPass=false,vanFail=false,hasCallback=false,hasLate=false,hasComp=false;
   data.forEach(e=>{upsellSales+=e.u||0;missed+=e.c||0;lateN+=e.la||0;lateF+=e.lf||0;compN+=e.co||0;cbN+=e.cb||0;gr+=e.gr||0;br+=e.br||0;if(e.van==='pass')vanPass=true;if(e.van==='fail')vanFail=true;if(e.cb)hasCallback=true;if(e.la||e.lf)hasLate=true;if(e.co)hasComp=true;});
   const done=completedWeekSlots(monthKey);const wkDone=done.includes(weekSlot);
-  const vanBon=wkDone&&vanPass&&!vanFail?s.van:0;
+  const vanBon=wkDone&&vanPass&&!vanFail?s.van:(wkDone&&vanFail?-s.van:0);
   const ncBon=wkDone&&data.length&&!hasCallback?s.nocallback:0;
-  const otBon=wkDone&&data.length&&!hasLate?s.ontime:0;
+  const otBon=wkDone&&data.length?(!hasLate?s.ontime:-s.ontime):0;
   const hapBon=wkDone&&data.length&&!hasCallback&&!hasComp?s.happy:0;
   const upsellBonus=calcTieredUpsell(upsellSales,s);const revBon=calcTieredReviews(gr);
   const ckPen=missed*s.checklist,laPen=lateN*s.late,lfPen=lateF*(s.lf||50),coPen=compN*s.complaint,cbPen=cbN*s.callback,brPen=br*s.badrev;
@@ -1272,11 +1279,11 @@ function renderSummary(){
     {t:'row',l:'Bad review penalty ('+c.br+')',v:c.brPen>0?'− '+fm(c.brPen):'$0.00',cls:c.brPen>0?'red':'green'},
     ...(c.deds.length?[{t:'sec',l:'Custom Deductions'},...c.deds.map(d=>({t:'row',l:d.reason+' ('+d.date+')',v:'− '+fm(d.amount),cls:'red'}))]:[]),
     {t:'sec',l:'Weekly Bonuses ('+c.doneSlots.length+' of 4 weeks completed)'},
-    {t:'row',l:'Perfect attendance (month)',v:c.attBonus>0?'+ '+fm(c.attBonus):'Not earned',cls:c.attBonus>0?'green':''},
-    {t:'row',l:'Van clean ('+c.cleanVan+' weeks × '+fm(c.s.van)+')',v:'+ '+fm(c.vanBon),cls:c.vanBon>0?'green':''},
+    {t:'row',l:'Perfect attendance (month)',v:c.attBonus>0?'+ '+fm(c.attBonus):c.attBonus<0?'− '+fm(-c.attBonus):'Not applicable',cls:c.attBonus>0?'green':c.attBonus<0?'red':''},
+    {t:'row',l:'Van clean ('+c.cleanVan+' pass, '+c.failVan+' fail)',v:(c.vanBon>=0?'+ ':'− ')+fm(Math.abs(c.vanBon)),cls:c.vanBon>=0?'green':'red'},
     {t:'row',l:'Happy customer ('+c.happyWks+' weeks × '+fm(c.s.happy)+')',v:'+ '+fm(c.hapBon),cls:c.hapBon>0?'green':''},
     {t:'row',l:'No callback ('+c.noCbWks+' weeks × '+fm(c.s.nocallback)+')',v:'+ '+fm(c.ncBon),cls:c.ncBon>0?'green':''},
-    {t:'row',l:'On-time ('+c.otWks+' weeks × '+fm(c.s.ontime)+')',v:'+ '+fm(c.otBon),cls:c.otBon>0?'green':''},
+    {t:'row',l:'On-time ('+c.otWks+' on, '+c.lateWkCount+' late)',v:(c.otBon>=0?'+ ':'− ')+fm(Math.abs(c.otBon)),cls:c.otBon>=0?'green':'red'},
     {t:'sec',l:'Totals'},
     {t:'row',l:'Quality bonus subtotal',v:fm(c.qualityTotal),cls:c.qualityTotal>0?'green':'red'},
     {t:'row',l:'Upsell commission — protected ('+Math.round(c.s.commission*100)+'%→'+Math.round((c.s.commissionTier2||0.40)*100)+'% tiered)',v:'+ '+fm(c.upsellBonus),cls:'c-blue'},
