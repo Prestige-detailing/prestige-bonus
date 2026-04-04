@@ -990,13 +990,9 @@ async function loadAllFromDB(){
     if(accs&&accs.length){
       _accs=accs.map(a=>({...a,rates:a.rates||dr,perms:a.perms||{},pinset:!!a.pinset,roletitle:a.roletitle||''}));
     } else {
-      // No accounts found in DB — create defaults only on first ever setup
-      _accs=[
-        {id:'owner_ig',name:'Isaiaih Gomez',roletitle:'Owner',type:'owner',color:'#44a2e6',pin:'0000',pinset:true,perms:{},rates:dr},
-        {id:'luis',name:'Luis Gonzalez',roletitle:'Lead Technician',type:'tech',color:'#44a2e6',pin:'1234',pinset:true,perms:{},rates:dr},
-        {id:'anthony',name:'Anthony',roletitle:'Technician',type:'tech',color:'#111111',pin:'5678',pinset:true,perms:{},rates:dr}
-      ];
-      await db.upsert('pd_accounts',_accs);
+      // Accounts failed to load — do NOT auto-create, just show empty and let user know
+      console.error('No accounts returned from DB — check Supabase connection');
+      _accs=[];
     }
     _data=Array.isArray(entries)?entries:[];
     _deds=Array.isArray(deds)?deds:[];
