@@ -1110,12 +1110,55 @@ function initials(n){return n.split(' ').map(w=>w[0]).join('').toUpperCase().sli
 function tsLabel(ts){return new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
 
 // ── WEEK LOGIC ──
+// Week runs Saturday → Friday. Week slots 1-4 are based on which Saturday-Friday
+// period the date falls in within the month.
+function getWeekSlotForDate(dateStr){
+  // Given a date string, find which week slot (1-4) it belongs to
+  // based on Saturday-to-Friday weeks within the month.
+  const d=new Date(dateStr+'T12:00:00');
+  const year=d.getFullYear(),month=d.getMonth();
+  // Find the first Saturday of the month
+  let firstSat=new Date(year,month,1);
+  while(firstSat.getDay()!==6)firstSat.setDate(firstSat.getDate()+1);
+  // If date is before the first Saturday, it belongs to week 1
+  if(d<firstSat) return 1;
+  const diffDays=Math.floor((d-firstSat)/(1000*60*60*24));
+  const slot=Math.floor(diffDays/7)+1;
+  return Math.min(4,Math.max(1,slot));
+}
+function currentWeekSlot(){
+  const today=new Date();
+  const iso=today.toISOString().slice(0,10);
+  return getWeekSlotForDate(iso);
+}
+function getWeekLabel(monthKey,slot){
+  // Returns a human-readable label like "Week 1 (Apr 5 – Apr 11)"
+  const[y,m]=monthKey.split('-').map(Number);
+  // Find first Saturday of month
+  let firstSat=new Date(y,m-1,1);
+  while(firstSat.getDay()!==6)firstSat.setDate(firstSat.getDate()+1);
+  let start,end;
+  if(slot===1){
+    // Week 1 starts on the 1st, ends on the day before the first Saturday (or first Friday)
+    start=new Date(y,m-1,1);
+    end=new Date(firstSat);end.setDate(end.getDate()-1);
+    // If first day is already Saturday, week 1 starts on Saturday
+    if(new Date(y,m-1,1).getDay()===6){start=firstSat;end=new Date(firstSat);end.setDate(end.getDate()+6);}
+  } else {
+    start=new Date(firstSat);start.setDate(firstSat.getDate()+(slot-2)*7);
+    // For slot 2+, start is firstSat + (slot-2)*7 days
+    if(slot===2) start=new Date(firstSat);
+    else start=new Date(firstSat.getTime()+((slot-2)*7*24*60*60*1000));
+    end=new Date(start.getTime()+(6*24*60*60*1000));
+  }
+  const fmt=dt=>dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return`Week ${slot} (${fmt(start)} – ${fmt(end)})`;
+}
 function completedWeekSlots(monthKey){
   const today=new Date();const[y,m]=monthKey.split('-').map(Number);const slots=[];
   for(let w=1;w<=4;w++){const startDay=(w-1)*7+1;const startDate=new Date(y,m-1,startDay);let fri=new Date(startDate);while(fri.getDay()!==5)fri.setDate(fri.getDate()+1);if(fri<today)slots.push(w);}
   return slots;
 }
-function currentWeekSlot(){const dom=new Date().getDate();return dom<=7?1:dom<=14?2:dom<=21?3:4;}
 
 // ── CALC MONTHLY ──
 function calc(empId,monthKey){
@@ -1193,15 +1236,25 @@ function calcWeek(empId,monthKey,weekSlot){
 
 // ── MONTHS ──
 function getMonths(){const s=new Set([curMk()]);allData().forEach(e=>s.add(mk(e.date)));getDeds().forEach(d=>s.add(mk(d.date)));return[...s].sort().reverse();}
+function populateWeekSel(id,monthKey,currentSlot){
+  const sel=document.getElementById(id);if(!sel)return;
+  const prev=sel.value?parseInt(sel.value):currentSlot;
+  sel.innerHTML=[1,2,3,4].map(w=>`<option value="${w}"${w===currentSlot?' selected':''}>${getWeekLabel(monthKey,w)}</option>`).join('');
+  // If user had manually selected a week, keep it; otherwise use current
+  if(prev&&prev!==currentSlot) sel.value=prev;
+}
 function populateSels(){
   const months=getMonths();
+  const curSlot=currentWeekSlot();
   ['sum-month-sel','email-month-sel','email-monthly-month-sel','goal-month-sel'].forEach(id=>{
     const sel=document.getElementById(id);if(!sel)return;
     const cur=sel.value||curMk();
     sel.innerHTML=months.map(m=>`<option value="${m}"${m===cur?' selected':''}>${fmLabel(m)}</option>`).join('');
   });
-  const wkSel=document.getElementById('email-week-sel');if(wkSel){const cw=currentWeekSlot();wkSel.value=cw;}
-  const gwSel=document.getElementById('goal-week-sel');if(gwSel){gwSel.value=currentWeekSlot();}
+  const emailMk=document.getElementById('email-month-sel')?.value||curMk();
+  populateWeekSel('email-week-sel',emailMk,curSlot);
+  const goalMk=document.getElementById('goal-month-sel')?.value||curMk();
+  populateWeekSel('goal-week-sel',goalMk,curSlot);
 }
 
 // ── INIT ──
@@ -1209,9 +1262,10 @@ function initDates(){
   const now=new Date();
   document.getElementById('footer-date').textContent=now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   document.getElementById('entry-dsub').textContent=now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-  document.getElementById('ed').value=now.toISOString().slice(0,10);
-  document.getElementById('ded-date').value=now.toISOString().slice(0,10);
-  const dom=now.getDate();document.getElementById('ew').value=dom<=7?1:dom<=14?2:dom<=21?3:4;
+  const todayStr=now.toISOString().slice(0,10);
+  document.getElementById('ed').value=todayStr;
+  document.getElementById('ded-date').value=todayStr;
+  document.getElementById('ew').value=currentWeekSlot();
 }
 
 // ── PERMISSIONS ──
@@ -1517,6 +1571,7 @@ function deltaText(pct){
 
 function renderEmail(){
   const selMk=document.getElementById('email-month-sel')?.value||curMk();
+  populateWeekSel('email-week-sel',selMk,currentWeekSlot());
   const weekSlot=parseInt(document.getElementById('email-week-sel')?.value||currentWeekSlot());
   const prevSlot=weekSlot>1?weekSlot-1:null;
   const isTechOnly=currentUser?.type==='tech'||eTech!=='owner';
