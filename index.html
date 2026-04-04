@@ -510,6 +510,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
       <button class="btn btn-ghost btn-sm" onclick="logout()">Switch User</button>
     </div>
   </header>
+  <!-- SEND REMINDER BANNER -->
+  <div id="send-banner" style="display:none;background:var(--blue);padding:12px 28px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:10px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 17H2a3 3 0 000 6h20a3 3 0 000-6z"/><path d="M12 1v12"/><path d="M5 8l7-7 7 7"/></svg>
+      <span id="send-banner-msg" style="color:white;font-size:13px;font-weight:500"></span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap" id="send-banner-btns"></div>
+    <button onclick="document.getElementById('send-banner').style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:18px;padding:0 4px;line-height:1">×</button>
+  </div>
 
   <div class="content">
 
@@ -1696,7 +1705,7 @@ function renderAccList(){
       <div class="av" style="background:${a.color};width:38px;height:38px;font-size:14px">${initials(a.name)}</div>
       <div style="flex:1"><div style="font-weight:500;font-size:14px;color:var(--ink)">${a.name}</div><div style="font-size:12px;color:var(--muted)">${a.roletitle} · <span class="role-pill ${rp.cls}" style="font-size:10px;padding:2px 8px">${rp.label}</span>${!a.pinset?' · <span style="color:var(--amber);font-size:11px">First login PIN not set</span>':''}</div></div>
       <div style="display:flex;gap:7px">
-        ${a.id===currentUser?.id?`<button class="btn btn-ghost btn-sm" onclick="openChangePIN()">Change PIN</button>`:''}
+        ${a.id===currentUser?.id?`<button class="btn btn-ghost btn-sm" onclick="openEditAcc('${a.id}')">Edit Profile</button><button class="btn btn-ghost btn-sm" onclick="openChangePIN()">Change PIN</button>`:''}
         ${canManage&&a.id!==currentUser?.id?`<button class="btn btn-ghost btn-sm" onclick="openEditAcc('${a.id}')">Edit</button><button class="btn btn-red btn-sm" onclick="deleteAcc('${a.id}')">Remove</button>`:''}
       </div>
     </div>`;
@@ -1941,7 +1950,7 @@ function loginUser(acc){
   const rp=ROLES[acc.type]||ROLES.tech;document.getElementById('session-who').textContent=acc.name;document.getElementById('session-role').textContent=rp.label;document.getElementById('session-role').className='role-pill '+rp.cls;
   const techs=getTechs();if(acc.type==='tech'){cTech=acc.id;sTech=acc.id;eTech=acc.id;eMailTech=acc.id;}
   else if(techs.length){cTech=techs[0].id;sTech=techs[0].id;eTech=techs[0].id;eMailTech=techs[0].id;}
-  addAudit('Login',acc.name+' ('+acc.type+')');applyPermissions();buildToggles();renderAll();
+  addAudit('Login',acc.name+' ('+acc.type+')');applyPermissions();buildToggles();renderAll();checkSendReminder();
 }
 function logout(){
   currentUser=null;pinBuffer='';pinTarget=null;
@@ -2320,7 +2329,89 @@ function applyMobPermissions(){
   if(goalsTab)goalsTab.style.display='flex';
 }
 
-// ── RENDER ALL ──
+// ── SEND REMINDER BANNER ──
+function checkSendReminder(){
+  if(!currentUser||currentUser.type!=='owner')return;
+  const day=new Date().getDay();// 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
+  const banner=document.getElementById('send-banner');
+  const msg=document.getElementById('send-banner-msg');
+  const btns=document.getElementById('send-banner-btns');
+  if(!banner)return;
+  const btnStyle='background:white;color:var(--blue);border:none;border-radius:6px;padding:7px 14px;font-family:"DM Sans",sans-serif;font-size:12px;font-weight:600;cursor:pointer';
+  if(day===5){// Friday — send weekly email summaries + texts
+    banner.style.display='flex';
+    msg.textContent="It's Friday — send this week's bonus summaries to your team.";
+    btns.innerHTML=`
+      <button style="${btnStyle}" onclick="sendAllWeeklyEmails()">📧 Send All Emails</button>
+      <button style="${btnStyle}" onclick="sendAllWeeklyTexts()">💬 Send All Texts</button>`;
+  } else if(day===2||day===4){// Tuesday or Thursday — goal tracker texts
+    banner.style.display='flex';
+    msg.textContent=day===2?"It's Tuesday — send goal check-ins to your team.":"It's Thursday — send goal updates to your team.";
+    btns.innerHTML=`<button style="${btnStyle}" onclick="sendAllGoalTexts()">💬 Send Goal Texts</button>`;
+  } else {
+    banner.style.display='none';
+  }
+}
+function sendAllWeeklyEmails(){
+  const techs=getTechs();
+  let sent=0;
+  techs.forEach(t=>{
+    if(!t.email)return;
+    const selMk=curMk();
+    const wk=currentWeekSlot();
+    const subject=encodeURIComponent(`Week ${wk} Bonus Update — Prestige Detailing`);
+    // Build email body for this tech
+    const c=calc(t.id,selMk);
+    const wkData=calcWeek(t.id,selMk,wk);
+    const body=encodeURIComponent(buildWeeklyEmailBody(t,wkData,c,wk,selMk));
+    window.open(`mailto:${t.email}?subject=${subject}&body=${body}`,'_blank');
+    sent++;
+  });
+  showToast(sent>0?`Opened ${sent} email${sent>1?'s':''} — review and send each one`:'No emails on file — add them in Accounts');
+}
+function sendAllWeeklyTexts(){
+  const techs=getTechs();
+  let sent=0;
+  techs.forEach(t=>{
+    if(!t.phone)return;
+    const selMk=curMk();
+    const wk=currentWeekSlot();
+    const wkData=calcWeek(t.id,selMk,wk);
+    const c=calc(t.id,selMk);
+    const msg=buildWeeklyTextBody(t,wkData,c,wk);
+    const encoded=encodeURIComponent(msg);
+    window.open(`sms:${t.phone}&body=${encoded}`,'_blank');
+    sent++;
+  });
+  showToast(sent>0?`Opened ${sent} text${sent>1?'s':''} — tap send in Messages`:'No phone numbers on file — add them in Accounts');
+}
+function sendAllGoalTexts(){
+  const techs=getTechs();
+  const selMk=curMk();
+  const wk=currentWeekSlot();
+  let sent=0;
+  techs.forEach(t=>{
+    if(!t.phone)return;
+    const goal=getGoal(t.id,selMk,wk);
+    const prog=getGoalProgress(t.id,selMk,wk);
+    const upsellBonus=calcTieredUpsell(prog.upsellSales,t.rates);
+    const revBonus=calcTieredReviews(prog.reviews);
+    const msg=buildGoalTextMsg(t,goal,prog,upsellBonus,revBonus);
+    const encoded=encodeURIComponent(msg);
+    window.open(`sms:${t.phone}&body=${encoded}`,'_blank');
+    sent++;
+  });
+  showToast(sent>0?`Opened ${sent} text${sent>1?'s':''} — tap send in Messages`:'No phone numbers on file — add them in Accounts');
+}
+function buildWeeklyEmailBody(emp,wk,mtd,weekSlot,selMk){
+  const mn=fmLabel(selMk);
+  const dedTotal=wk?wk.ckPen+wk.laPen+wk.lfPen+wk.coPen+wk.cbPen+wk.brPen:0;
+  return`Hey ${emp.name.split(' ')[0]} — here's your Week ${weekSlot} bonus update.\n${mn}\n${'─'.repeat(44)}\n\nTHIS WEEK AT A GLANCE\n  Week ${weekSlot} total:        ${wk?fm(wk.total):'No entries yet'}\n  Month-to-date:        ${mtd?fm(mtd.total):'—'}\n\n${wk?`WEEK ${weekSlot} BREAKDOWN\n  Upsell commission:    ${fm(wk.upsellBonus)}\n  Review bonus:         ${fm(wk.revBon)}\n  Van clean bonus:      ${fm(wk.vanBon)}\n  No callback bonus:    ${fm(wk.ncBon)}\n  On-time bonus:        ${fm(wk.otBon)}\n  Happy customer:       ${fm(wk.hapBon)}\n  Total deductions:   − ${fm(dedTotal)}\n\nCALLBACKS THIS WEEK: ${wk.cbN}\nBAD REVIEWS THIS WEEK: ${wk.br}`:'No entries logged for this week.'}\n\n${'─'.repeat(44)}\nMONTH-TO-DATE TOTALS (${mn})\n  Protected earnings:   ${mtd?fm(mtd.upsellBonus+mtd.revBon):'—'}\n  Quality bonus:        ${mtd?fm(mtd.qualityTotal):'—'}\n  TOTAL THIS MONTH:     ${mtd?fm(mtd.total):'—'}\n\n${wk&&wk.cbN===0?'Zero callbacks this week. That\'s the standard.\n':''}\n— Isaiah`;
+}
+function buildWeeklyTextBody(emp,wk,mtd,weekSlot){
+  const cbLine=wk?.cbN===0?'Zero callbacks ✓':'Callbacks: '+wk?.cbN+' — affects quality bonus';
+  return`Hey ${emp.name.split(' ')[0]} — Week ${weekSlot} wrap-up:\n\nThis week: ${wk?fm(wk.total):'No entries'}\nMonth total: ${mtd?fm(mtd.total):'—'}\nUpsells: ${fm(wk?.upsellBonus||0)} | Reviews: ${fm(wk?.revBon||0)}\n${cbLine}\n\n— Isaiah`;
+}
 function renderAll(){buildToggles();renderEM();renderWkStrip();renderSummary();renderLog();renderEmail();renderMonthlyEmail();renderDedList();renderAccList();renderAudit();renderGoals();}
 
 // ── INIT ──
