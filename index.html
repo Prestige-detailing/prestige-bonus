@@ -988,10 +988,11 @@ async function loadAllFromDB(){
     console.log('DB loaded — accounts:',accs?.length??'err','entries:',entries?.length??'err','deds:',deds?.length??'err');
     const dr=defaultRates();
     if(accs&&accs.length){
-      _accs=accs.map(a=>({...a,rates:a.rates||dr,perms:a.perms||{},pinset:a.pinset||false,roletitle:a.roletitle||''}));
+      _accs=accs.map(a=>({...a,rates:a.rates||dr,perms:a.perms||{},pinset:!!a.pinset,roletitle:a.roletitle||''}));
     } else {
+      // No accounts found in DB — create defaults only on first ever setup
       _accs=[
-        {id:'owner_ig',name:'Isaiaih Gomez',roletitle:'Owner',type:'owner',color:'#44a2e6',pin:'0000',pinset:false,perms:{},rates:dr},
+        {id:'owner_ig',name:'Isaiaih Gomez',roletitle:'Owner',type:'owner',color:'#44a2e6',pin:'0000',pinset:true,perms:{},rates:dr},
         {id:'luis',name:'Luis Gonzalez',roletitle:'Lead Technician',type:'tech',color:'#44a2e6',pin:'1234',pinset:true,perms:{},rates:dr},
         {id:'anthony',name:'Anthony',roletitle:'Technician',type:'tech',color:'#111111',pin:'5678',pinset:true,perms:{},rates:dr}
       ];
