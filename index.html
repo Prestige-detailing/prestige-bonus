@@ -1127,53 +1127,49 @@ function initials(n){return n.split(' ').map(w=>w[0]).join('').toUpperCase().sli
 function tsLabel(ts){return new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
 
 // ── WEEK LOGIC ──
-// Week runs Saturday → Friday. Week slots 1-4 are based on which Saturday-Friday
-// period the date falls in within the month.
-function getWeekSlotForDate(dateStr){
-  // Given a date string, find which week slot (1-4) it belongs to
-  // based on Saturday-to-Friday weeks within the month.
-  const d=new Date(dateStr+'T12:00:00');
-  const year=d.getFullYear(),month=d.getMonth();
-  // Find the first Saturday of the month
-  let firstSat=new Date(year,month,1);
+// Week 1 = Apr 1 to first Friday. Week 2 = first Saturday to next Friday. Etc.
+function getWeekBounds(monthKey,slot){
+  const[y,m]=monthKey.split('-').map(Number);
+  // Find first Saturday of the month
+  let firstSat=new Date(y,m-1,1);
   while(firstSat.getDay()!==6)firstSat.setDate(firstSat.getDate()+1);
-  // If date is before the first Saturday, it belongs to week 1
-  if(d<firstSat) return 1;
-  const diffDays=Math.floor((d-firstSat)/(1000*60*60*24));
-  const slot=Math.floor(diffDays/7)+1;
-  return Math.min(4,Math.max(1,slot));
+  const monthStart=new Date(y,m-1,1);
+  const firstSatIsDay1=firstSat.getDate()===1;
+  let start,end;
+  if(slot===1){
+    start=monthStart;
+    if(firstSatIsDay1){end=new Date(y,m-1,7);}
+    else{end=new Date(firstSat);end.setDate(end.getDate()-1);}
+  } else {
+    const weekStart=firstSatIsDay1?new Date(firstSat.getTime()+((slot-1)*7*86400000)):new Date(firstSat.getTime()+((slot-2)*7*86400000));
+    start=weekStart;
+    end=new Date(weekStart.getTime()+(6*86400000));
+  }
+  return{start,end};
+}
+function getWeekSlotForDate(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  const monthKey=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  for(let w=1;w<=4;w++){
+    const{start,end}=getWeekBounds(monthKey,w);
+    if(d>=start&&d<=end) return w;
+  }
+  return 4;
 }
 function currentWeekSlot(){
   const today=new Date();
-  const iso=today.toISOString().slice(0,10);
+  const iso=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
   return getWeekSlotForDate(iso);
 }
 function getWeekLabel(monthKey,slot){
-  // Returns a human-readable label like "Week 1 (Apr 5 – Apr 11)"
-  const[y,m]=monthKey.split('-').map(Number);
-  // Find first Saturday of month
-  let firstSat=new Date(y,m-1,1);
-  while(firstSat.getDay()!==6)firstSat.setDate(firstSat.getDate()+1);
-  let start,end;
-  if(slot===1){
-    // Week 1 starts on the 1st, ends on the day before the first Saturday (or first Friday)
-    start=new Date(y,m-1,1);
-    end=new Date(firstSat);end.setDate(end.getDate()-1);
-    // If first day is already Saturday, week 1 starts on Saturday
-    if(new Date(y,m-1,1).getDay()===6){start=firstSat;end=new Date(firstSat);end.setDate(end.getDate()+6);}
-  } else {
-    start=new Date(firstSat);start.setDate(firstSat.getDate()+(slot-2)*7);
-    // For slot 2+, start is firstSat + (slot-2)*7 days
-    if(slot===2) start=new Date(firstSat);
-    else start=new Date(firstSat.getTime()+((slot-2)*7*24*60*60*1000));
-    end=new Date(start.getTime()+(6*24*60*60*1000));
-  }
+  const{start,end}=getWeekBounds(monthKey,slot);
   const fmt=dt=>dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   return`Week ${slot} (${fmt(start)} – ${fmt(end)})`;
 }
 function completedWeekSlots(monthKey){
-  const today=new Date();const[y,m]=monthKey.split('-').map(Number);const slots=[];
-  for(let w=1;w<=4;w++){const startDay=(w-1)*7+1;const startDate=new Date(y,m-1,startDay);let fri=new Date(startDate);while(fri.getDay()!==5)fri.setDate(fri.getDate()+1);if(fri<today)slots.push(w);}
+  const today=new Date();today.setHours(23,59,59,0);
+  const slots=[];
+  for(let w=1;w<=4;w++){const{end}=getWeekBounds(monthKey,w);if(end<today)slots.push(w);}
   return slots;
 }
 
@@ -1653,7 +1649,7 @@ function renderEmail(){
   // Raw text
   const totalPct=pctDelta(wk?.total,pwk?.total);
   const dedTotal=wk?wk.ckPen+wk.laPen+wk.lfPen+wk.coPen+wk.cbPen+wk.brPen:0;
-  document.getElementById('eb-weekly').textContent=`Hey ${acc.name} — here's your Week ${weekSlot} bonus update.\n${mn}\n${'─'.repeat(44)}\n\nTHIS WEEK AT A GLANCE\n  Week ${weekSlot} total:        ${wk?fm(wk.total):'No entries yet'}  ${deltaText(totalPct)}\n  Month-to-date:        ${mtd?fm(mtd.total):'—'}\n\n${wk?`WEEK ${weekSlot} BREAKDOWN\n  Upsell commission:    ${fm(wk.upsellBonus)}  ${deltaText(pctDelta(wk.upsellBonus,pwk?.upsellBonus))}\n  Review bonus:         ${fm(wk.revBon)}  ${deltaText(pctDelta(wk.revBon,pwk?.revBon))}\n  Van clean bonus:      ${fm(wk.vanBon)}  ${deltaText(pctDelta(wk.vanBon,pwk?.vanBon))}\n  No callback bonus:    ${fm(wk.ncBon)}  ${deltaText(pctDelta(wk.ncBon,pwk?.ncBon))}\n  On-time bonus:        ${fm(wk.otBon)}  ${deltaText(pctDelta(wk.otBon,pwk?.otBon))}\n  Happy customer:       ${fm(wk.hapBon)}  ${deltaText(pctDelta(wk.hapBon,pwk?.hapBon))}\n  Total deductions:   − ${fm(dedTotal)}  ${deltaText(pctDelta(-dedTotal,pwk?-(pwk.ckPen+pwk.laPen+pwk.lfPen+pwk.coPen+pwk.cbPen+pwk.brPen):null))}\n\nCALLBACKS THIS WEEK: ${wk.cbN}\nBAD REVIEWS THIS WEEK: ${wk.br}`:'No entries logged for this week.'}\n\n${'─'.repeat(44)}\nMONTH-TO-DATE TOTALS (${mn})\n  Protected earnings:   ${mtd?fm(mtd.upsellBonus+mtd.revBon):'—'}\n  Quality bonus:        ${mtd?fm(mtd.qualityTotal):'—'}\n  TOTAL THIS MONTH:     ${mtd?fm(mtd.total):'—'}\n\n${wk&&wk.cbN>0?wk.cbN+' callback'+(wk.cbN>1?'s':'')+' this week — that affects your quality bonus.\n':''}${wk&&wk.cbN===0?'Zero callbacks this week. That\'s the standard.\n':''}\n— Isaiaih`;
+  document.getElementById('eb-weekly').textContent=`Hey ${acc.name} — here's your Week ${weekSlot} bonus update.\n${mn}\n${'─'.repeat(44)}\n\nTHIS WEEK AT A GLANCE\n  Week ${weekSlot} total:        ${wk?fm(wk.total):'No entries yet'}  ${deltaText(totalPct)}\n  Month-to-date:        ${mtd?fm(mtd.total):'—'}\n\n${wk?`WEEK ${weekSlot} BREAKDOWN\n  Upsell commission:    ${fm(wk.upsellBonus)}  ${deltaText(pctDelta(wk.upsellBonus,pwk?.upsellBonus))}\n  Review bonus:         ${fm(wk.revBon)}  ${deltaText(pctDelta(wk.revBon,pwk?.revBon))}\n  Van clean bonus:      ${fm(wk.vanBon)}  ${deltaText(pctDelta(wk.vanBon,pwk?.vanBon))}\n  No callback bonus:    ${fm(wk.ncBon)}  ${deltaText(pctDelta(wk.ncBon,pwk?.ncBon))}\n  On-time bonus:        ${fm(wk.otBon)}  ${deltaText(pctDelta(wk.otBon,pwk?.otBon))}\n  Happy customer:       ${fm(wk.hapBon)}  ${deltaText(pctDelta(wk.hapBon,pwk?.hapBon))}\n  Total deductions:   − ${fm(dedTotal)}  ${deltaText(pctDelta(-dedTotal,pwk?-(pwk.ckPen+pwk.laPen+pwk.lfPen+pwk.coPen+pwk.cbPen+pwk.brPen):null))}\n\nCALLBACKS THIS WEEK: ${wk.cbN}\nBAD REVIEWS THIS WEEK: ${wk.br}`:'No entries logged for this week.'}\n\n${'─'.repeat(44)}\nMONTH-TO-DATE TOTALS (${mn})\n  Protected earnings:   ${mtd?fm(mtd.upsellBonus+mtd.revBon):'—'}\n  Quality bonus:        ${mtd?fm(mtd.qualityTotal):'—'}\n  TOTAL THIS MONTH:     ${mtd?fm(mtd.total):'—'}\n\n${wk&&wk.cbN>0?wk.cbN+' callback'+(wk.cbN>1?'s':'')+' this week — that affects your quality bonus.\n':''}${wk&&wk.cbN===0?'Zero callbacks this week. That\'s the standard.\n':''}\n— ${currentUser?.name?.split(' ')[0]||'Isaiah'}`;
 }
 
 function renderMonthlyEmail(){
@@ -1669,7 +1665,7 @@ function renderMonthlyEmail(){
   const c=calc(eMailTech,selMk);if(!c)return;
   document.getElementById('em-title').textContent='Monthly Summary — '+acc.name;
   const dedLines=c.deds.length?'\n\nCUSTOM DEDUCTIONS\n'+c.deds.map(d=>`  ${d.reason}: − ${fm(d.amount)}`).join('\n'):'';
-  document.getElementById('eb-monthly').textContent=`Hey ${acc.name} — here's your monthly bonus summary for ${mn}.\n${'─'.repeat(44)}\n\nPROTECTED EARNINGS (always paid)\n  Upsell commission:    ${fm(c.upsellBonus)}  (${Math.round(c.s.commission*100)}% of ${fm(c.upsellSales)})\n  Review bonus:         ${fm(c.revBon)}  (${c.gr} review${c.gr!==1?'s':''} × ${fm(c.s.goodrev)})\n\nQUALITY BONUS\n  Starting base:        ${fm(c.s.start)}\n  Checklist penalty:  − ${fm(c.ckPen)}  (${c.missed} missed)\n  Late arrival:       − ${fm(c.laPen)}  (${c.lateN})\n  Late finish:        − ${fm(c.lfPen)}  (${c.lateF})\n  Complaint penalty:  − ${fm(c.coPen)}\n  Callback penalty:   − ${fm(c.cbPen)}  (${c.cbN})\n  Bad review penalty: − ${fm(c.brPen)}${dedLines}\n  Attendance bonus:   + ${fm(c.attBonus)}\n  Van clean:          + ${fm(c.vanBon)}  (${c.cleanVan} week${c.cleanVan!==1?'s':''})\n  Happy customer:     + ${fm(c.hapBon)}  (${c.happyWks} week${c.happyWks!==1?'s':''})\n  No callback:        + ${fm(c.ncBon)}  (${c.noCbWks} week${c.noCbWks!==1?'s':''})\n  On-time:            + ${fm(c.otBon)}  (${c.otWks} week${c.otWks!==1?'s':''})\n  Quality subtotal:     ${fm(c.qualityTotal)}\n\n${'─'.repeat(44)}\nYOUR TOTAL THIS MONTH: ${fm(c.total)}\n\n${c.cbN>0?c.cbN+' callback'+(c.cbN!==1?'s':'')+' this month affected your quality bonus.':'Zero callbacks this month. That\'s the standard.'}\n— Isaiaih`;
+  document.getElementById('eb-monthly').textContent=`Hey ${acc.name} — here's your monthly bonus summary for ${mn}.\n${'─'.repeat(44)}\n\nPROTECTED EARNINGS (always paid)\n  Upsell commission:    ${fm(c.upsellBonus)}  (${Math.round(c.s.commission*100)}% of ${fm(c.upsellSales)})\n  Review bonus:         ${fm(c.revBon)}  (${c.gr} review${c.gr!==1?'s':''} × ${fm(c.s.goodrev)})\n\nQUALITY BONUS\n  Starting base:        ${fm(c.s.start)}\n  Checklist penalty:  − ${fm(c.ckPen)}  (${c.missed} missed)\n  Late arrival:       − ${fm(c.laPen)}  (${c.lateN})\n  Late finish:        − ${fm(c.lfPen)}  (${c.lateF})\n  Complaint penalty:  − ${fm(c.coPen)}\n  Callback penalty:   − ${fm(c.cbPen)}  (${c.cbN})\n  Bad review penalty: − ${fm(c.brPen)}${dedLines}\n  Attendance bonus:   + ${fm(c.attBonus)}\n  Van clean:          + ${fm(c.vanBon)}  (${c.cleanVan} week${c.cleanVan!==1?'s':''})\n  Happy customer:     + ${fm(c.hapBon)}  (${c.happyWks} week${c.happyWks!==1?'s':''})\n  No callback:        + ${fm(c.ncBon)}  (${c.noCbWks} week${c.noCbWks!==1?'s':''})\n  On-time:            + ${fm(c.otBon)}  (${c.otWks} week${c.otWks!==1?'s':''})\n  Quality subtotal:     ${fm(c.qualityTotal)}\n\n${'─'.repeat(44)}\nYOUR TOTAL THIS MONTH: ${fm(c.total)}\n\n${c.cbN>0?c.cbN+' callback'+(c.cbN!==1?'s':'')+' this month affected your quality bonus.':'Zero callbacks this month. That\'s the standard.'}\n— ${currentUser?.name?.split(' ')[0]||'Isaiah'}`;
 }
 
 // ── CUSTOM DEDUCTIONS ──
@@ -1828,7 +1824,41 @@ function saveGlobal(){
   addAudit('Global settings updated','');showToast('Settings saved');
 }
 
-// ── THEME ──
+// ── SESSION PERSISTENCE ──
+const SESSION_KEY='pd_session';
+const SESSION_TIMEOUT=5*60*1000;// 5 minutes inactivity
+let _activityTimer=null;
+
+function saveSession(acc){
+  localStorage.setItem(SESSION_KEY,JSON.stringify({id:acc.id,ts:Date.now()}));
+}
+function clearSession(){
+  localStorage.removeItem(SESSION_KEY);
+}
+function resetActivityTimer(){
+  clearTimeout(_activityTimer);
+  _activityTimer=setTimeout(()=>{
+    if(currentUser){
+      showToast('Session expired — logging out');
+      setTimeout(()=>logout(),1500);
+    }
+  },SESSION_TIMEOUT);
+  // Update session timestamp
+  if(currentUser) saveSession(currentUser);
+}
+function restoreSession(){
+  try{
+    const raw=localStorage.getItem(SESSION_KEY);
+    if(!raw)return null;
+    const s=JSON.parse(raw);
+    if(Date.now()-s.ts>SESSION_TIMEOUT){clearSession();return null;}
+    return s.id;
+  }catch(e){return null;}
+}
+// Track user activity to reset timer
+['click','keydown','touchstart','scroll'].forEach(ev=>{
+  document.addEventListener(ev,()=>{if(currentUser)resetActivityTimer();},{passive:true});
+});
 function toggleTheme(){const next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);localStorage.setItem('pd_theme',next);document.getElementById('theme-lbl').textContent=next==='dark'?'Dark':'Light';}
 function loadTheme(){const t=localStorage.getItem('pd_theme')||'light';document.documentElement.setAttribute('data-theme',t);const lbl=document.getElementById('theme-lbl');if(lbl)lbl.textContent=t==='dark'?'Dark':'Light';}
 
@@ -1946,7 +1976,10 @@ function submitNewPin(){
   loginUser(pinTarget);
 }
 function loginUser(acc){
-  currentUser=acc;document.getElementById('pin-screen').style.display='none';document.getElementById('app').style.display='flex';
+  currentUser=acc;
+  saveSession(acc);
+  resetActivityTimer();
+  document.getElementById('pin-screen').style.display='none';document.getElementById('app').style.display='flex';
   const rp=ROLES[acc.type]||ROLES.tech;document.getElementById('session-who').textContent=acc.name;document.getElementById('session-role').textContent=rp.label;document.getElementById('session-role').className='role-pill '+rp.cls;
   const techs=getTechs();if(acc.type==='tech'){cTech=acc.id;sTech=acc.id;eTech=acc.id;eMailTech=acc.id;}
   else if(techs.length){cTech=techs[0].id;sTech=techs[0].id;eTech=techs[0].id;eMailTech=techs[0].id;}
@@ -1954,6 +1987,7 @@ function loginUser(acc){
 }
 function logout(){
   currentUser=null;pinBuffer='';pinTarget=null;
+  clearSession();clearTimeout(_activityTimer);
   document.getElementById('app').style.display='none';document.getElementById('pin-screen').style.display='flex';
   document.querySelectorAll('.nb').forEach(b=>{b.classList.remove('locked');b.style.display='';});
   const noperm=document.getElementById('entry-noperm');if(noperm)noperm.remove();
@@ -2146,7 +2180,7 @@ function buildGoalTextMsg(emp,goal,prog,upsellBonus,revBonus){
   const cbLine=cbClean
     ?`Callbacks: 0 — Clean week, no-callback bonus locked in ✓`
     :`Callbacks: ${prog.callbacks} — This is affecting your no-callback bonus`;
-  return`Hey ${emp.name.split(' ')[0]} — here's where you're at this week:\n\n${upsellLine}\n${revLine}\n${cbLine}\n\nKeep pushing. Every upsell and review is money in your pocket.\n— Isaiaih`;
+  return`Hey ${emp.name.split(' ')[0]} — here's where you're at this week:\n\n${upsellLine}\n${revLine}\n${cbLine}\n\nKeep pushing. Every upsell and review is money in your pocket.\n— ${currentUser?.name?.split(' ')[0]||'Isaiah'}`;
 }
 
 function renderGoals(){
@@ -2406,11 +2440,11 @@ function sendAllGoalTexts(){
 function buildWeeklyEmailBody(emp,wk,mtd,weekSlot,selMk){
   const mn=fmLabel(selMk);
   const dedTotal=wk?wk.ckPen+wk.laPen+wk.lfPen+wk.coPen+wk.cbPen+wk.brPen:0;
-  return`Hey ${emp.name.split(' ')[0]} — here's your Week ${weekSlot} bonus update.\n${mn}\n${'─'.repeat(44)}\n\nTHIS WEEK AT A GLANCE\n  Week ${weekSlot} total:        ${wk?fm(wk.total):'No entries yet'}\n  Month-to-date:        ${mtd?fm(mtd.total):'—'}\n\n${wk?`WEEK ${weekSlot} BREAKDOWN\n  Upsell commission:    ${fm(wk.upsellBonus)}\n  Review bonus:         ${fm(wk.revBon)}\n  Van clean bonus:      ${fm(wk.vanBon)}\n  No callback bonus:    ${fm(wk.ncBon)}\n  On-time bonus:        ${fm(wk.otBon)}\n  Happy customer:       ${fm(wk.hapBon)}\n  Total deductions:   − ${fm(dedTotal)}\n\nCALLBACKS THIS WEEK: ${wk.cbN}\nBAD REVIEWS THIS WEEK: ${wk.br}`:'No entries logged for this week.'}\n\n${'─'.repeat(44)}\nMONTH-TO-DATE TOTALS (${mn})\n  Protected earnings:   ${mtd?fm(mtd.upsellBonus+mtd.revBon):'—'}\n  Quality bonus:        ${mtd?fm(mtd.qualityTotal):'—'}\n  TOTAL THIS MONTH:     ${mtd?fm(mtd.total):'—'}\n\n${wk&&wk.cbN===0?'Zero callbacks this week. That\'s the standard.\n':''}\n— Isaiah`;
+  return`Hey ${emp.name.split(' ')[0]} — here's your Week ${weekSlot} bonus update.\n${mn}\n${'─'.repeat(44)}\n\nTHIS WEEK AT A GLANCE\n  Week ${weekSlot} total:        ${wk?fm(wk.total):'No entries yet'}\n  Month-to-date:        ${mtd?fm(mtd.total):'—'}\n\n${wk?`WEEK ${weekSlot} BREAKDOWN\n  Upsell commission:    ${fm(wk.upsellBonus)}\n  Review bonus:         ${fm(wk.revBon)}\n  Van clean bonus:      ${fm(wk.vanBon)}\n  No callback bonus:    ${fm(wk.ncBon)}\n  On-time bonus:        ${fm(wk.otBon)}\n  Happy customer:       ${fm(wk.hapBon)}\n  Total deductions:   − ${fm(dedTotal)}\n\nCALLBACKS THIS WEEK: ${wk.cbN}\nBAD REVIEWS THIS WEEK: ${wk.br}`:'No entries logged for this week.'}\n\n${'─'.repeat(44)}\nMONTH-TO-DATE TOTALS (${mn})\n  Protected earnings:   ${mtd?fm(mtd.upsellBonus+mtd.revBon):'—'}\n  Quality bonus:        ${mtd?fm(mtd.qualityTotal):'—'}\n  TOTAL THIS MONTH:     ${mtd?fm(mtd.total):'—'}\n\n${wk&&wk.cbN===0?'Zero callbacks this week. That\'s the standard.\n':''}\n— ${currentUser?.name?.split(' ')[0]||'Isaiah'}`;
 }
 function buildWeeklyTextBody(emp,wk,mtd,weekSlot){
   const cbLine=wk?.cbN===0?'Zero callbacks ✓':'Callbacks: '+wk?.cbN+' — affects quality bonus';
-  return`Hey ${emp.name.split(' ')[0]} — Week ${weekSlot} wrap-up:\n\nThis week: ${wk?fm(wk.total):'No entries'}\nMonth total: ${mtd?fm(mtd.total):'—'}\nUpsells: ${fm(wk?.upsellBonus||0)} | Reviews: ${fm(wk?.revBon||0)}\n${cbLine}\n\n— Isaiah`;
+  return`Hey ${emp.name.split(' ')[0]} — Week ${weekSlot} wrap-up:\n\nThis week: ${wk?fm(wk.total):'No entries'}\nMonth total: ${mtd?fm(mtd.total):'—'}\nUpsells: ${fm(wk?.upsellBonus||0)} | Reviews: ${fm(wk?.revBon||0)}\n${cbLine}\n\n— ${currentUser?.name?.split(' ')[0]||'Isaiah'}`;
 }
 function renderAll(){buildToggles();renderEM();renderWkStrip();renderSummary();renderLog();renderEmail();renderMonthlyEmail();renderDedList();renderAccList();renderAudit();renderGoals();}
 
@@ -2421,6 +2455,15 @@ initDates();
   await loadAllFromDB();
   populateSels();
   loadGlobal();
+  // Try to restore previous session
+  const savedId=restoreSession();
+  if(savedId){
+    const acc=_accs.find(a=>a.id===savedId);
+    if(acc){
+      loginUser(acc);
+      return;
+    }
+  }
   renderEmpSel();
   document.getElementById('pin-screen').style.display='flex';
   document.getElementById('app').style.display='none';
