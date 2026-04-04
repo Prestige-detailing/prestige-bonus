@@ -905,15 +905,15 @@ const ALL_PERMS=[
 
 // Role ceilings — what each role CAN do at maximum
 const ROLE_CEIL={
-  owner:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:true,cfg:true,email:true,log:true,summary:true},
-  admin:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:false,cfg:true,email:true,log:true,summary:true},
-  manager:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:false,cfg:false,email:true,log:true,summary:true},
-  viewer:{entry:false,editEntry:false,viewAllEmps:true,deductions:false,audit:false,accounts:false,cfg:false,email:true,log:true,summary:true},
-  tech:{entry:false,editEntry:false,viewAllEmps:false,deductions:false,audit:false,accounts:false,cfg:false,email:false,log:false,summary:true}
+  owner:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:true,cfg:true,email:true,log:true,summary:true,goals:true},
+  admin:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:false,cfg:true,email:true,log:true,summary:true,goals:true},
+  manager:{entry:true,editEntry:true,viewAllEmps:true,deductions:true,audit:true,accounts:false,cfg:false,email:true,log:true,summary:true,goals:true},
+  viewer:{entry:false,editEntry:false,viewAllEmps:true,deductions:false,audit:false,accounts:false,cfg:false,email:true,log:true,summary:true,goals:true},
+  tech:{entry:false,editEntry:false,viewAllEmps:false,deductions:false,audit:false,accounts:false,cfg:false,email:false,log:false,summary:true,goals:true}
 };
 
 // Nav tab → permission key
-const NAV_PERMS={entry:'entry',summary:'summary',log:'log',email:'email',goals:'entry',accounts:'accounts',deductions:'deductions',audit:'audit',cfg:'cfg'};
+const NAV_PERMS={entry:'entry',summary:'summary',log:'log',email:'email',goals:'goals',accounts:'accounts',deductions:'deductions',audit:'audit',cfg:'cfg'};
 
 let selColor=COLORS[0],editAccId=null,editEntryIdx=null,sumView='breakdown',emailMode='weekly';
 let cTech='',sTech='',eTech='',eMailTech='';
@@ -1097,6 +1097,7 @@ function getPerms(acc){
   // Also copy non-toggleable perms
   result.log=ceil.log||false;
   result.summary=ceil.summary||false;
+  result.goals=ceil.goals||false;
   return result;
 }
 
@@ -2072,7 +2073,14 @@ function buildGoalTextMsg(emp,goal,prog,upsellBonus,revBonus){
 function renderGoals(){
   const selMk=document.getElementById('goal-month-sel')?.value||curMk();
   const weekSlot=parseInt(document.getElementById('goal-week-sel')?.value||currentWeekSlot());
-  const techs=getTechs();
+  const isTech=currentUser?.type==='tech';
+  // Techs only see their own card
+  const techs=isTech?getTechs().filter(t=>t.id===currentUser.id):getTechs();
+  // Hide Set Goals tab from techs
+  const setGoalsTab=document.querySelector('#goals .vt:last-child');
+  if(setGoalsTab) setGoalsTab.style.display=isTech?'none':'';
+  // If tech is on set view, redirect to progress
+  if(isTech&&goalView==='set'){goalView='progress';document.querySelectorAll('#goals .vt').forEach((b,i)=>{b.classList.toggle('active',i===0);});document.getElementById('goal-progress').style.display='block';document.getElementById('goal-h2h').style.display='none';document.getElementById('goal-set').style.display='none';}
 
   if(goalView==='progress'){
     document.getElementById('goal-progress-grid').innerHTML=techs.map(emp=>{
@@ -2215,6 +2223,9 @@ function applyMobPermissions(){
   // Hide entry tab for viewers/techs without entry perm
   const entryTab=document.getElementById('mtab-entry');
   if(entryTab)entryTab.style.display=perms.entry?'flex':'none';
+  // Goals tab always visible
+  const goalsTab=document.getElementById('mtab-goals');
+  if(goalsTab)goalsTab.style.display='flex';
 }
 
 // ── RENDER ALL ──
