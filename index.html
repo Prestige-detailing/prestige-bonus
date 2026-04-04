@@ -615,6 +615,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
           <div class="card-hdr"><div><div class="card-title">Raw Email Text</div><div class="card-sub">Copy and paste into Gmail or GHL</div></div></div>
           <div class="email-raw" id="eb-weekly"></div>
           <button class="btn btn-ghost" style="margin-top:10px;width:100%;justify-content:center" onclick="copyEmail('eb-weekly')">Copy Weekly Email</button>
+          <button class="btn btn-blue" style="margin-top:8px;width:100%;justify-content:center" onclick="sendWeeklyEmail()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send Email Directly
+          </button>
         </div>
       </div>
       <!-- MONTHLY EMAIL -->
@@ -627,6 +631,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
           <div class="card-hdr"><div><div class="card-title" id="em-title">Monthly Summary</div><div class="card-sub">Copy and paste into Gmail or GHL</div></div></div>
           <div class="email-raw" id="eb-monthly"></div>
           <button class="btn btn-ghost" style="margin-top:10px;width:100%;justify-content:center" onclick="copyEmail('eb-monthly')">Copy Monthly Email</button>
+          <button class="btn btn-blue" style="margin-top:8px;width:100%;justify-content:center" onclick="sendMonthlyEmail()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send Email Directly
+          </button>
         </div>
       </div>
     </div>
@@ -786,7 +794,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
       <div class="fi"><label>Full Name</label><input type="text" id="acc-name"></div>
       <div class="fi"><label>Job Title</label><input type="text" id="acc-role-title" placeholder="e.g. Lead Technician"></div>
     </div>
-    <div class="fi" style="margin-top:10px"><label>Email Address — used for PIN reset</label><input type="email" id="acc-email" placeholder="e.g. luis@gmail.com"></div>
+    <div class="fg2" style="margin-top:10px">
+      <div class="fi"><label>Email Address — used for PIN reset &amp; direct send</label><input type="email" id="acc-email" placeholder="e.g. luis@gmail.com"></div>
+      <div class="fi"><label>Phone Number — used for direct text message</label><input type="tel" id="acc-phone" placeholder="e.g. 9561234567"></div>
+    </div>
     <div class="fg2" style="margin-top:10px">
       <div class="fi"><label>Account Type</label>
         <select id="acc-type" onchange="onTypeChange()">
@@ -1017,7 +1028,7 @@ function saveAccs(a){
 function saveOneAcc(acc){
   const idx=_accs.findIndex(a=>a.id===acc.id);
   if(idx>-1) _accs[idx]=acc;
-  db.update('pd_accounts',acc.id,{name:acc.name,roletitle:acc.roletitle,type:acc.type,color:acc.color,pin:acc.pin,pinset:acc.pinset,email:acc.email||'',perms:acc.perms,rates:acc.rates})
+  db.update('pd_accounts',acc.id,{name:acc.name,roletitle:acc.roletitle,type:acc.type,color:acc.color,pin:acc.pin,pinset:acc.pinset,email:acc.email||'',phone:acc.phone||'',perms:acc.perms,rates:acc.rates})
     .then(r=>console.log('saveOneAcc:',acc.id,'pinset:',acc.pinset,'result:',r));
 }
 
@@ -1729,7 +1740,7 @@ function pickColor(c,el){selColor=c;document.querySelectorAll('#acc-color-picker
 function openAddAcc(){
   if(!currentUser||!getPerms(currentUser).accounts){showToast('Owner access required');return;}
   editAccId=null;document.getElementById('acc-modal-title').textContent='Add Account';document.getElementById('acc-save-btn').textContent='Add Account';
-  document.getElementById('acc-name').value='';document.getElementById('acc-role-title').value='';document.getElementById('acc-pin').value='';document.getElementById('acc-type').value='tech';document.getElementById('acc-email').value='';
+  document.getElementById('acc-name').value='';document.getElementById('acc-role-title').value='';document.getElementById('acc-pin').value='';document.getElementById('acc-type').value='tech';document.getElementById('acc-email').value='';document.getElementById('acc-phone').value='';
   const g=globalCfg();const rmap={start:'er-start',checklist:'er-ck',late:'er-late',lf:'er-lf',complaint:'er-comp',callback:'er-cb',badrev:'er-badrev',goodrev:'er-goodrev',commission:'er-comm',commissionTier2:'er-comm2',attendance:'er-att',van:'er-van',happy:'er-happy',nocallback:'er-ncb',ontime:'er-ot'};
   Object.entries(rmap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=g[k]||defaultRates()[k];});
   document.getElementById('emp-rates-wrap').style.display='block';
@@ -1739,7 +1750,7 @@ function openAddAcc(){
 function openEditAcc(id){
   const acc=getAccs().find(a=>a.id===id);if(!acc)return;editAccId=id;
   document.getElementById('acc-modal-title').textContent='Edit — '+acc.name;document.getElementById('acc-save-btn').textContent='Save Changes';
-  document.getElementById('acc-name').value=acc.name;document.getElementById('acc-role-title').value=acc.roletitle;document.getElementById('acc-pin').value=acc.pin||'';document.getElementById('acc-type').value=acc.type;document.getElementById('acc-email').value=acc.email||'';
+  document.getElementById('acc-name').value=acc.name;document.getElementById('acc-role-title').value=acc.roletitle;document.getElementById('acc-pin').value=acc.pin||'';document.getElementById('acc-type').value=acc.type;document.getElementById('acc-email').value=acc.email||'';document.getElementById('acc-phone').value=acc.phone||'';
   const rmap={start:'er-start',checklist:'er-ck',late:'er-late',lf:'er-lf',complaint:'er-comp',callback:'er-cb',badrev:'er-badrev',goodrev:'er-goodrev',commission:'er-comm',commissionTier2:'er-comm2',attendance:'er-att',van:'er-van',happy:'er-happy',nocallback:'er-ncb',ontime:'er-ot'};
   Object.entries(rmap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=acc.rates?acc.rates[k]||0:0;});
   document.getElementById('emp-rates-wrap').style.display=acc.type==='tech'?'block':'none';
@@ -1752,17 +1763,18 @@ function saveAccount(){
   const pin=document.getElementById('acc-pin').value.trim();if(pin.length!==4||isNaN(pin)){showToast('PIN must be exactly 4 digits');return;}
   const type=document.getElementById('acc-type').value;
   const email=document.getElementById('acc-email').value.trim().toLowerCase();
+  const phone=document.getElementById('acc-phone').value.replace(/\D/g,'');
   const rates=type==='tech'?{start:+document.getElementById('er-start').value||100,checklist:+document.getElementById('er-ck').value||10,late:+document.getElementById('er-late').value||50,lf:+document.getElementById('er-lf').value||50,complaint:+document.getElementById('er-comp').value||25,callback:+document.getElementById('er-cb').value||50,badrev:+document.getElementById('er-badrev').value||100,goodrev:+document.getElementById('er-goodrev').value||7.5,commission:+document.getElementById('er-comm').value||0.30,commissionTier2:+document.getElementById('er-comm2').value||0.40,attendance:+document.getElementById('er-att').value||50,van:+document.getElementById('er-van').value||20,happy:+document.getElementById('er-happy').value||10,nocallback:+document.getElementById('er-ncb').value||50,ontime:+document.getElementById('er-ot').value||50,activeLines:getBonusToggles()}:defaultRates();
   const perms=getPermOverrides();
   if(editAccId){
     const idx=_accs.findIndex(a=>a.id===editAccId);
     if(idx>-1){
-      _accs[idx]={..._accs[idx],name,roletitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinset:true,email,perms,rates};
+      _accs[idx]={..._accs[idx],name,roletitle:document.getElementById('acc-role-title').value.trim(),type,color:selColor,pin,pinset:true,email,phone,perms,rates};
       saveOneAcc(_accs[idx]);
     }
     addAudit('Account updated',name);showToast(name+' updated');
   } else {
-    const newAcc={id:uid(),name,roletitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinset:true,email,perms,rates};
+    const newAcc={id:uid(),name,roletitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinset:true,email,phone,perms,rates};
     _accs.push(newAcc);
     saveOneAcc(newAcc);
     addAudit('Account created',name+' ('+type+')');showToast(name+' added');
@@ -2098,10 +2110,16 @@ function renderProgressCard(emp,goal,prog,isCallbackGoal){
       </div>
     </div>
 
-    <button class="txt-btn" onclick="copyGoalText(\`${textMsg.replace(/`/g,"'")}\`)">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      Copy Text Message
-    </button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="txt-btn" onclick="copyGoalText(\`${textMsg.replace(/`/g,"'")}\`)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Copy Text
+      </button>
+      ${emp.phone?`<button class="txt-btn" style="background:var(--blue-bg);color:var(--blue);border-color:rgba(68,162,230,0.2)" onclick="sendSMS('${emp.phone}',\`${textMsg.replace(/`/g,"'")}\`)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        Send Text
+      </button>`:''}
+    </div>
   </div>`;
 }
 
@@ -2220,6 +2238,28 @@ function copyGoalText(txt){
   navigator.clipboard.writeText(txt).then(()=>showToast('Text message copied — paste into iMessage or WhatsApp')).catch(()=>{
     const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);showToast('Copied');
   });
+}
+function sendSMS(phone,msg){
+  if(!phone){showToast('No phone number on file for this employee');return;}
+  // sms: URI opens native Messages app with number and body pre-filled
+  const encoded=encodeURIComponent(msg);
+  window.location.href=`sms:${phone}&body=${encoded}`;
+}
+function sendWeeklyEmail(){
+  const acc=getAccs().find(a=>a.id===eTech);
+  if(eTech==='owner'){showToast('Select a specific tech to send directly');return;}
+  if(!acc?.email){showToast('No email on file for '+( acc?.name||'this employee')+' — add it in Accounts');return;}
+  const subject=encodeURIComponent(document.getElementById('email-wk-title').textContent||'Weekly Bonus Update');
+  const body=encodeURIComponent(document.getElementById('eb-weekly').textContent||'');
+  window.location.href=`mailto:${acc.email}?subject=${subject}&body=${body}`;
+}
+function sendMonthlyEmail(){
+  const acc=getAccs().find(a=>a.id===eMailTech);
+  if(eMailTech==='owner'){showToast('Select a specific tech to send directly');return;}
+  if(!acc?.email){showToast('No email on file for '+(acc?.name||'this employee')+' — add it in Accounts');return;}
+  const subject=encodeURIComponent(document.getElementById('em-title').textContent||'Monthly Bonus Summary');
+  const body=encodeURIComponent(document.getElementById('eb-monthly').textContent||'');
+  window.location.href=`mailto:${acc.email}?subject=${subject}&body=${body}`;
 }
 
 // ── MOBILE NAV ──
