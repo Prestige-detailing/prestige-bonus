@@ -367,6 +367,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
   }
 }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -942,42 +944,73 @@ const PAGE_META={entry:['Daily Entry','Log technician performance'],summary:['Su
 
 // ── DATA ──
 // ── SUPABASE CONFIG ──
-const SUPA_URL='https://rigaahabcbfdvdqaurpd.supabase.co';
-const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpZ2FhaGFiY2JmZHZkcWF1cnBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzM1OTIsImV4cCI6MjA5MDcwOTU5Mn0.y3pmoD8S0q7J0RRLSxcPhjiTX2J5mv4Zj3Bnj39rOUc';
+// ── Firebase Firestore backend ──
+const firebaseConfig={
+  apiKey:"AIzaSyDm_ZcNWPbEy4n8XwYQJ4ekdi2P7sjoufo",
+  authDomain:"prestige-detailing-ea85a.firebaseapp.com",
+  projectId:"prestige-detailing-ea85a",
+  storageBucket:"prestige-detailing-ea85a.firebasestorage.app",
+  messagingSenderId:"779413861167",
+  appId:"1:779413861167:web:95f0a5da917256ee72e7da"
+};
+firebase.initializeApp(firebaseConfig);
+const fsdb=firebase.firestore();
 
-// Core fetch — handles all Supabase REST calls correctly
-async function sbFetch(path, method, body, extraHeaders){
-  const headers={
-    'apikey':SUPA_KEY,
-    'Authorization':'Bearer '+SUPA_KEY,
-    'Content-Type':'application/json',
-    ...extraHeaders
-  };
-  const opts={method:method||'GET',headers};
-  if(body!==undefined) opts.body=JSON.stringify(body);
-  try {
-    const res=await fetch(SUPA_URL+'/rest/v1/'+path,opts);
-    // 200, 201 Created, 204 No Content — all success
-    if(res.status===200||res.status===201||res.status===204){
-      const text=await res.text();
-      return text?JSON.parse(text):true;
-    }
-    const errText=await res.text();
-    console.error('DB error',res.status,path,errText);
-    return null;
-  } catch(e){
-    console.error('DB fetch error:',path,e.message);
-    return null;
+// Parse PostgREST-style query string and apply to a Firestore collection ref.
+// Supports: order=col.asc|desc, limit=N. Anything else is ignored silently.
+function fsApplyQuery(collRef,query){
+  let q=collRef;
+  if(!query)return q;
+  for(const p of query.split('&')){
+    const om=p.match(/^order=([^.&]+)\.(asc|desc)$/);
+    if(om){q=q.orderBy(om[1],om[2]);continue;}
+    const lm=p.match(/^limit=(\d+)$/);
+    if(lm){q=q.limit(parseInt(lm[1]));continue;}
   }
+  return q;
 }
 
-// Convenience wrappers
+// db wrapper — same interface as the old Supabase one (get/insert/update/upsert/delete).
+// Uses each row's `id` (or `key` for pd_goals) as the Firestore document id so updates and
+// upserts work without auto-generated keys diverging from in-memory state.
 const db={
-  get:(table,query='')=>sbFetch(table+(query?'?'+query:''),'GET'),
-  insert:(table,row)=>sbFetch(table,'POST',[row],{'Prefer':'return=minimal'}),
-  update:(table,id,data)=>sbFetch(table+'?id=eq.'+encodeURIComponent(id),'PATCH',data,{'Prefer':'return=minimal'}),
-  upsert:(table,rows)=>sbFetch(table,'POST',Array.isArray(rows)?rows:[rows],{'Prefer':'resolution=merge-duplicates,return=minimal'}),
-  delete:(table,id)=>sbFetch(table+'?id=eq.'+encodeURIComponent(id),'DELETE')
+  get:async(table,query='')=>{
+    try{
+      const snap=await fsApplyQuery(fsdb.collection(table),query).get();
+      return snap.docs.map(d=>d.data());
+    }catch(e){console.error('DB get error:',table,e.message);return null;}
+  },
+  insert:async(table,row)=>{
+    try{
+      const id=row.id||row.key;
+      await fsdb.collection(table).doc(id).set(row);
+      return true;
+    }catch(e){console.error('DB insert error:',table,e.message);return null;}
+  },
+  update:async(table,id,data)=>{
+    try{
+      await fsdb.collection(table).doc(id).set(data,{merge:true});
+      return true;
+    }catch(e){console.error('DB update error:',table,e.message);return null;}
+  },
+  upsert:async(table,rows)=>{
+    try{
+      const arr=Array.isArray(rows)?rows:[rows];
+      const batch=fsdb.batch();
+      arr.forEach(row=>{
+        const id=row.id||row.key;
+        batch.set(fsdb.collection(table).doc(id),row,{merge:true});
+      });
+      await batch.commit();
+      return true;
+    }catch(e){console.error('DB upsert error:',table,e.message);return null;}
+  },
+  delete:async(table,id)=>{
+    try{
+      await fsdb.collection(table).doc(id).delete();
+      return true;
+    }catch(e){console.error('DB delete error:',table,e.message);return null;}
+  }
 };
 
 // In-memory cache
@@ -998,9 +1031,30 @@ async function loadAllFromDB(){
     const dr=defaultRates();
     if(accs&&accs.length){
       _accs=accs.map(a=>({...a,rates:a.rates||dr,perms:a.perms||{},pinset:!!a.pinset,roletitle:a.roletitle||''}));
+    } else if(Array.isArray(accs)){
+      // Empty collection — first run after migration. Seed an Owner account so
+      // someone can actually sign in. Isaiah picks his name, sets a PIN, and
+      // adds the rest of the crew from the Accounts page.
+      console.log('No accounts in DB — seeding default owner');
+      const seed={
+        id:uid(),
+        name:'Isaiah Gomez',
+        roletitle:'Owner',
+        type:'owner',
+        color:'#c9a84c',
+        pin:'0000',
+        pinset:false,
+        email:'prestigedetailingrgv@gmail.com',
+        phone:'',
+        perms:{},
+        rates:dr,
+        created_at:new Date().toISOString()
+      };
+      await db.insert('pd_accounts',seed);
+      _accs=[seed];
     } else {
-      // Accounts failed to load — do NOT auto-create, just show empty and let user know
-      console.error('No accounts returned from DB — check Supabase connection');
+      // db.get returned null — network/permissions failure. Don't auto-create.
+      console.error('No accounts returned from DB — check Firebase connection');
       _accs=[];
     }
     _data=Array.isArray(entries)?entries:[];
@@ -1881,71 +1935,15 @@ function selectUser(id){
     renderPinDots();buildNumpad();
   }
 }
-// ── PIN RESET VIA EMAIL OTP ──
+// ── PIN RESET ──
+// Email-OTP reset previously ran via Supabase Auth. On Firebase we keep the flow
+// simple: forgotten PINs are reset by the owner from the Accounts page.
 let _otpTarget=null;
 async function startPinReset(){
-  if(!pinTarget){showToast('Select your name first');return;}
-  const acc=pinTarget;
-  if(!acc.email){
-    document.getElementById('pin-err').textContent='No email on file — ask your owner to add one in Accounts.';
-    return;
-  }
-  document.getElementById('pin-err').textContent='';
-  showToast('Sending code to '+acc.email+'...');
-  try {
-    const res=await fetch(SUPA_URL+'/auth/v1/otp',{
-      method:'POST',
-      headers:{'apikey':SUPA_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({email:acc.email,create_user:false})
-    });
-    const data=await res.json();
-    if(!res.ok){
-      console.error('OTP send error:',data);
-      document.getElementById('pin-err').textContent='Could not send code: '+(data.message||'unknown error');
-      return;
-    }
-    _otpTarget=acc;
-    document.getElementById('pin-entry').style.display='none';
-    document.getElementById('pin-otp').style.display='block';
-    document.getElementById('otp-sub').textContent='A reset code was sent to '+acc.email+'. Check your inbox and enter it below.';
-    document.getElementById('otp-code').value='';
-    document.getElementById('otp-err').textContent='';
-    showToast('Code sent — check your email');
-  } catch(e){
-    document.getElementById('pin-err').textContent='Network error — try again';
-    console.error('OTP error:',e);
-  }
+  document.getElementById('pin-err').textContent='Forgot PIN? Ask Isaiah to reset it from the Accounts page.';
 }
 async function verifyOTP(){
-  if(!_otpTarget)return;
-  const token=document.getElementById('otp-code').value.trim();
-  if(token.length<6){document.getElementById('otp-err').textContent='Enter the full reset code from your email';return;}
-  document.getElementById('otp-err').textContent='Verifying...';
-  try {
-    const res=await fetch(SUPA_URL+'/auth/v1/verify',{
-      method:'POST',
-      headers:{'apikey':SUPA_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({email:_otpTarget.email,token,type:'magiclink'})
-    });
-    const data=await res.json();
-    console.log('OTP verify response:',data);
-    if(!res.ok||(!data.user&&!data.access_token)){
-      document.getElementById('otp-err').textContent='Invalid or expired code — request a new one';
-      return;
-    }
-    // Verified — go to set new PIN
-    document.getElementById('otp-err').textContent='';
-    document.getElementById('pin-otp').style.display='none';
-    document.getElementById('pin-title').textContent='Set New PIN — '+_otpTarget.name.split(' ')[0];
-    document.getElementById('pin-sub').textContent='Verified. Choose a new 4-digit PIN.';
-    document.getElementById('pin-newset').style.display='block';
-    document.getElementById('np1').value='';
-    document.getElementById('np2').value='';
-    pinTarget=_otpTarget;
-  } catch(e){
-    document.getElementById('otp-err').textContent='Network error — try again';
-    console.error('OTP verify error:',e);
-  }
+  document.getElementById('otp-err').textContent='PIN reset is handled by the owner in Accounts.';
 }
 
 function backToWho(){
