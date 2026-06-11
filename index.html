@@ -198,7 +198,32 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
 .h2h-bar-fill{height:100%;border-radius:4px;transition:width .5s ease}
 .txt-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--green-bg);color:var(--green);border:1px solid rgba(26,158,106,0.2);border-radius:var(--radius-sm);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;margin-top:12px}
 .txt-btn:hover{background:var(--green);color:white}
-@media(max-width:700px){.h2h-grid{grid-template-columns:1fr}}
+/* VS IDEAL */
+.vi-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow);margin-bottom:16px}
+.vi-headline{background:linear-gradient(135deg,var(--gold) 0%,#d4b658 100%);border-radius:var(--radius);padding:20px;margin-bottom:18px;color:white;text-align:center;position:relative;overflow:hidden}
+.vi-headline.zero{background:linear-gradient(135deg,var(--green) 0%,#22b377 100%)}
+.vi-headline-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;opacity:.9;margin-bottom:4px}
+.vi-headline-val{font-family:'Cormorant Garamond',serif;font-size:42px;font-weight:500;line-height:1}
+.vi-headline-sub{font-size:12px;opacity:.85;margin-top:6px}
+.vi-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.vi-col{background:var(--off);border:1px solid var(--border);border-radius:var(--radius-sm);padding:18px}
+.vi-col.actual{border-left:3px solid var(--blue)}
+.vi-col.ideal{border-left:3px solid var(--gold)}
+.vi-col-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.vi-col-total{font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:500;margin-bottom:14px;line-height:1}
+.vi-line{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+.vi-line:last-child{border-bottom:none}
+.vi-line .lbl{color:var(--muted)}
+.vi-line .v{font-weight:600;color:var(--ink)}
+.vi-line .v.neg{color:var(--red)}
+.vi-line .v.pos{color:var(--green)}
+.vi-line .v.faint{color:var(--faint)}
+.vi-gap-callouts{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.vi-gap-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+.vi-gap-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px}
+.vi-gap-row .reason{color:var(--ink)}
+.vi-gap-row .cost{color:var(--red);font-weight:600;font-family:'Cormorant Garamond',serif;font-size:17px}
+@media(max-width:700px){.h2h-grid{grid-template-columns:1fr}.vi-cols{grid-template-columns:1fr}}
 
 /* ── DESKTOP EXPLICIT (768px+) ── */
 @media(min-width:769px){
@@ -655,6 +680,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
         <div class="vtabs">
           <button class="vt active" onclick="setGoalView('progress',this)">Progress</button>
+          <button class="vt" onclick="setGoalView('vsideal',this)">Current vs Ideal</button>
           <button class="vt" onclick="setGoalView('headtohead',this)">Head-to-Head</button>
           <button class="vt" onclick="setGoalView('set',this)">Set Goals</button>
         </div>
@@ -670,6 +696,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
       <!-- PROGRESS VIEW -->
       <div id="goal-progress">
         <div id="goal-progress-grid"></div>
+      </div>
+      <!-- CURRENT VS IDEAL -->
+      <div id="goal-vs-ideal" style="display:none">
+        <div id="goal-vs-ideal-grid"></div>
       </div>
       <!-- HEAD TO HEAD -->
       <div id="goal-h2h" style="display:none">
@@ -1027,7 +1057,7 @@ async function loadAllFromDB(){
   ]);
   try {
     const [accs,entries,deds,audit,cfgRows,goalRows]=await Promise.all([
-      timed('pd_accounts',db.get('pd_accounts','order=created_at.asc')),
+      timed('pd_accounts',db.get('pd_accounts')),  // sort client-side; orderBy excludes docs missing the field
       timed('pd_entries',db.get('pd_entries','order=date.asc')),
       timed('pd_deductions',db.get('pd_deductions','order=date.asc')),
       timed('pd_audit',db.get('pd_audit','order=created_at.desc&limit=500')),
@@ -1037,7 +1067,9 @@ async function loadAllFromDB(){
     console.log('DB loaded — accounts:',accs?.length??'err','entries:',entries?.length??'err','deds:',deds?.length??'err');
     const dr=defaultRates();
     if(accs&&accs.length){
-      _accs=accs.map(a=>({...a,rates:a.rates||dr,perms:a.perms||{},pinset:!!a.pinset,roletitle:a.roletitle||''}));
+      _accs=accs
+        .map(a=>({...a,rates:a.rates||dr,perms:a.perms||{},pinset:!!a.pinset,roletitle:a.roletitle||'',created_at:a.created_at||new Date(0).toISOString()}))
+        .sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||''));
     } else if(Array.isArray(accs)){
       // Empty collection — first run after migration. Seed an Owner account so
       // someone can actually sign in. Isaiah picks his name, sets a PIN, and
@@ -1127,7 +1159,10 @@ function saveAccs(a){
 function saveOneAcc(acc){
   const idx=_accs.findIndex(a=>a.id===acc.id);
   if(idx>-1) _accs[idx]=acc;
-  db.update('pd_accounts',acc.id,{name:acc.name,roletitle:acc.roletitle,type:acc.type,color:acc.color,pin:acc.pin,pinset:acc.pinset,email:acc.email||'',phone:acc.phone||'',perms:acc.perms,rates:acc.rates})
+  // created_at MUST be written — loadAllFromDB queries with orderBy('created_at'),
+  // and Firestore silently excludes docs missing the field. Backfill for older accounts.
+  if(!acc.created_at) acc.created_at=new Date().toISOString();
+  db.update('pd_accounts',acc.id,{name:acc.name,roletitle:acc.roletitle,type:acc.type,color:acc.color,pin:acc.pin,pinset:acc.pinset,email:acc.email||'',phone:acc.phone||'',perms:acc.perms,rates:acc.rates,created_at:acc.created_at})
     .then(r=>console.log('saveOneAcc:',acc.id,'pinset:',acc.pinset,'result:',r));
 }
 
@@ -1869,7 +1904,7 @@ function saveAccount(){
     }
     addAudit('Account updated',name);showToast(name+' updated');
   } else {
-    const newAcc={id:uid(),name,roletitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinset:true,email,phone,perms,rates};
+    const newAcc={id:uid(),name,roletitle:document.getElementById('acc-role-title').value.trim()||'Technician',type,color:selColor,pin,pinset:true,email,phone,perms,rates,created_at:new Date().toISOString()};
     _accs.push(newAcc);
     saveOneAcc(newAcc);
     addAudit('Account created',name+' ('+type+')');showToast(name+' added');
@@ -2104,9 +2139,97 @@ function setGoalView(view,btn){
   document.querySelectorAll('#goals .vt').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('goal-progress').style.display=view==='progress'?'block':'none';
+  document.getElementById('goal-vs-ideal').style.display=view==='vsideal'?'block':'none';
   document.getElementById('goal-h2h').style.display=view==='headtohead'?'block':'none';
   document.getElementById('goal-set').style.display=view==='set'?'block':'none';
   renderGoals();
+}
+
+// ── IDEAL CALC ── what bonus would look like with zero mistakes ──
+function idealCalc(empId,monthKey){
+  const c=calc(empId,monthKey);if(!c)return null;
+  const s=c.s;const al=s.activeLines||defaultActiveLines();
+  const wkCount=c.entryWks.size;
+  // Ideal: zero all penalties, max all weekly bonuses across every entered week
+  const idealAttBonus=al.attendance?(wkCount>0?s.attendance:0):0;
+  const idealVanBon=al.van?wkCount*s.van:0;
+  const idealOtBon=al.ontime?wkCount*s.ontime:0;
+  const idealHapBon=al.happy?wkCount*s.happy:0;
+  const idealNcBon=al.nocallback?wkCount*s.nocallback:0;
+  const idealQualityTotal=s.start+idealAttBonus+idealVanBon+idealHapBon+idealNcBon+idealOtBon;
+  // Protected earnings stay the same (upsell + review already locked in)
+  const idealTotal=c.upsellBonus+c.revBon+idealQualityTotal;
+  return{...c,idealAttBonus,idealVanBon,idealOtBon,idealHapBon,idealNcBon,idealQualityTotal,idealTotal,leftOnTable:idealTotal-c.total,wkCount};
+}
+
+// Build "what cost you" callout list
+function buildGapCallouts(c){
+  const al=c.s.activeLines||defaultActiveLines();
+  const callouts=[];
+  if(al.checklist&&c.ckPen>0) callouts.push({reason:c.missed+' missed checklist'+(c.missed!==1?'s':''),cost:c.ckPen});
+  if(al.late&&c.laPen>0) callouts.push({reason:c.lateN+' late arrival'+(c.lateN!==1?'s':''),cost:c.laPen});
+  if(al.late&&c.lfPen>0) callouts.push({reason:c.lateF+' late finish'+(c.lateF!==1?'s':''),cost:c.lfPen});
+  if(c.coPen>0) callouts.push({reason:c.compN+' complaint'+(c.compN!==1?'s':''),cost:c.coPen});
+  if(al.callback&&c.cbPen>0) callouts.push({reason:c.cbN+' callback'+(c.cbN!==1?'s':''),cost:c.cbPen});
+  if(al.badrev&&c.brPen>0) callouts.push({reason:c.br+' bad review'+(c.br!==1?'s':''),cost:c.brPen});
+  if(c.customDedTotal>0) callouts.push({reason:c.deds.length+' custom deduction'+(c.deds.length!==1?'s':''),cost:c.customDedTotal});
+  // Missed weekly bonuses
+  if(al.van&&c.failVan>0) callouts.push({reason:c.failVan+' van inspection fail'+(c.failVan!==1?'s':''),cost:c.failVan*c.s.van*2});
+  if(al.ontime&&c.lateWkCount>0) callouts.push({reason:c.lateWkCount+' late week'+(c.lateWkCount!==1?'s':'')+' (lost on-time bonus)',cost:c.lateWkCount*c.s.ontime*2});
+  if(al.attendance&&(c.lateN>0||c.lateF>0)&&c.wkCount>0) callouts.push({reason:'Perfect attendance bonus lost',cost:c.s.attendance*2});
+  return callouts.sort((a,b)=>b.cost-a.cost);
+}
+
+function renderVsIdealCard(emp,c){
+  if(!c)return`<div class="vi-card"><div style="text-align:center;color:var(--muted);padding:20px">No entries for ${emp.name} this month yet.</div></div>`;
+  const gap=c.leftOnTable;
+  const totalDed=c.ckPen+c.laPen+c.lfPen+c.coPen+c.cbPen+c.brPen+c.customDedTotal;
+  const callouts=buildGapCallouts(c);
+  const calloutHtml=callouts.length?callouts.map(co=>`<div class="vi-gap-row"><span class="reason">${co.reason}</span><span class="cost">− ${fm(co.cost)}</span></div>`).join(''):'<div style="color:var(--green);font-size:13px;font-weight:500;padding:6px 0">★ Clean month — no money left on the table.</div>';
+  return`<div class="vi-card">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:16px">
+      <div class="av" style="background:${emp.color};width:38px;height:38px;font-size:14px">${initials(emp.name)}</div>
+      <div><div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:500;color:var(--ink)">${emp.name}</div><div style="font-size:11px;color:var(--muted)">${emp.roletitle}</div></div>
+    </div>
+    <div class="vi-headline ${gap<=0?'zero':''}">
+      <div class="vi-headline-label">${gap<=0?'On Track — No Money Left Behind':'Money Left On The Table This Month'}</div>
+      <div class="vi-headline-val">${fm(Math.abs(gap))}</div>
+      <div class="vi-headline-sub">${gap<=0?'Earning everything you can — keep it up.':'This is what you\'d be earning if every week was clean.'}</div>
+    </div>
+    <div class="vi-cols">
+      <div class="vi-col actual">
+        <div class="vi-col-title">Right Now</div>
+        <div class="vi-col-total" style="color:${c.total>=c.s.start?'var(--blue)':'var(--red)'}">${fm(c.total)}</div>
+        <div class="vi-line"><span class="lbl">Upsell commission</span><span class="v pos">${fm(c.upsellBonus)}</span></div>
+        <div class="vi-line"><span class="lbl">Review bonus</span><span class="v pos">${fm(c.revBon)}</span></div>
+        <div class="vi-line"><span class="lbl">Starting base</span><span class="v">${fm(c.s.start)}</span></div>
+        <div class="vi-line"><span class="lbl">Weekly bonuses earned</span><span class="v pos">${fm(c.vanBon+c.hapBon+c.ncBon+c.otBon+c.attBonus)}</span></div>
+        <div class="vi-line"><span class="lbl">Total deductions</span><span class="v neg">${totalDed>0?'− '+fm(totalDed):'$0.00'}</span></div>
+        <div class="vi-line"><span class="lbl">Quality subtotal</span><span class="v">${fm(c.qualityTotal)}</span></div>
+      </div>
+      <div class="vi-col ideal">
+        <div class="vi-col-title">If Perfect</div>
+        <div class="vi-col-total" style="color:var(--gold)">${fm(c.idealTotal)}</div>
+        <div class="vi-line"><span class="lbl">Upsell commission</span><span class="v pos">${fm(c.upsellBonus)}</span></div>
+        <div class="vi-line"><span class="lbl">Review bonus</span><span class="v pos">${fm(c.revBon)}</span></div>
+        <div class="vi-line"><span class="lbl">Starting base</span><span class="v">${fm(c.s.start)}</span></div>
+        <div class="vi-line"><span class="lbl">Weekly bonuses (all maxed)</span><span class="v pos">${fm(c.idealVanBon+c.idealHapBon+c.idealNcBon+c.idealOtBon+c.idealAttBonus)}</span></div>
+        <div class="vi-line"><span class="lbl">Total deductions</span><span class="v faint">$0.00</span></div>
+        <div class="vi-line"><span class="lbl">Quality subtotal</span><span class="v pos">${fm(c.idealQualityTotal)}</span></div>
+      </div>
+    </div>
+    <div class="vi-gap-callouts">
+      <div class="vi-gap-title">What Cost You This Month</div>
+      ${calloutHtml}
+    </div>
+  </div>`;
+}
+
+function renderVsIdeal(){
+  const selMk=document.getElementById('goal-month-sel')?.value||curMk();
+  const isTech=currentUser?.type==='tech';
+  const techs=isTech?getTechs().filter(t=>t.id===currentUser.id):getTechs();
+  document.getElementById('goal-vs-ideal-grid').innerHTML=techs.map(emp=>renderVsIdealCard(emp,idealCalc(emp.id,selMk))).join('');
 }
 
 function getGoalProgress(empId,monthKey,weekSlot){
@@ -2230,7 +2353,7 @@ function renderGoals(){
   const setGoalsTab=document.querySelector('#goals .vt:last-child');
   if(setGoalsTab) setGoalsTab.style.display=isTech?'none':'';
   // If tech is on set view, redirect to progress
-  if(isTech&&goalView==='set'){goalView='progress';document.querySelectorAll('#goals .vt').forEach((b,i)=>{b.classList.toggle('active',i===0);});document.getElementById('goal-progress').style.display='block';document.getElementById('goal-h2h').style.display='none';document.getElementById('goal-set').style.display='none';}
+  if(isTech&&goalView==='set'){goalView='progress';document.querySelectorAll('#goals .vt').forEach((b,i)=>{b.classList.toggle('active',i===0);});document.getElementById('goal-progress').style.display='block';document.getElementById('goal-vs-ideal').style.display='none';document.getElementById('goal-h2h').style.display='none';document.getElementById('goal-set').style.display='none';}
 
   if(goalView==='progress'){
     document.getElementById('goal-progress-grid').innerHTML=techs.map(emp=>{
@@ -2238,6 +2361,10 @@ function renderGoals(){
       const prog=getGoalProgress(emp.id,selMk,weekSlot);
       return renderProgressCard(emp,goal,prog);
     }).join('');
+  }
+
+  if(goalView==='vsideal'){
+    renderVsIdeal();
   }
 
   if(goalView==='headtohead'){
